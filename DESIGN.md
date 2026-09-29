@@ -494,6 +494,22 @@ The third is MD5.
 What that buys is that a collector is its own modules and nothing else,
 and so can be sent to a node that is already running.
 
+Igniter is a dependency, and an optional one: it is what
+`mix igniter.install` is written with, it is not among what an
+application is built with unless the application has it already, and
+the installer is not among the modules that are sent to a node.
+
+### The installer writes configuration, and not a child
+
+The other Timeless packages are put among the children of the
+application's supervisor. A collector is put in the configuration
+instead, with `start: true`, and with `start: false` for the tests.
+
+A child of the supervisor is started wherever the application is, which
+includes its tests. A collector there would hear of every process a test
+suite starts, and send what it heard to the planes on the machine of
+whoever ran the tests.
+
 ### Into a running node
 
 The node that needs accounting for is the one that is misbehaving now,

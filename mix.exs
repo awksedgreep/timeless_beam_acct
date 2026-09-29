@@ -39,6 +39,10 @@ defmodule TimelessBeamAcct.MixProject do
 
   defp deps do
     [
+      # For `mix igniter.install` and nothing else. A collector has no
+      # dependencies when it runs, which is what lets it be sent to a node
+      # that is already running.
+      {:igniter, "~> 0.6", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end

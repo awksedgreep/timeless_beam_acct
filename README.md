@@ -62,11 +62,26 @@ OTP 28 and 29. [What is not here yet](#what-is-not-here-yet) is listed at
 the end, and [DESIGN.md](DESIGN.md) explains the decisions.
 
 Elixir 1.18 or later. Exit accounting needs OTP 27 or later; on an older
-VM the collector runs without it. There are no dependencies.
+VM the collector runs without it. A collector has no dependencies when it
+runs. Igniter is an optional one, for the installer.
 
 ## Quick start
 
 ### In an application
+
+With [Igniter](https://hexdocs.pm/igniter):
+
+```sh
+mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct
+mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --sink timeless
+```
+
+It configures a collector to start with the application, and to stay off
+while the application's tests run. `--sink` is `http` (the default),
+`timeless`, or `stdout`, and `--metrics-url`, `--logs-url`, and
+`--traces-url` say where the planes are.
+
+Or by hand:
 
 ```elixir
 # mix.exs

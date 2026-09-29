@@ -8,6 +8,9 @@ defmodule Mix.Tasks.TimelessBeamAcct do
   tasks reach a node from a terminal: they put a collector into it, look
   at what the collector has, and take the collector out.
 
+  To have an application start a collector of its own, see
+  `mix timeless_beam_acct.install`.
+
       mix timeless_beam_acct.check app@ohm --cookie secret
       mix timeless_beam_acct.attach app@ohm --cookie secret --sink http
       mix timeless_beam_acct.top app@ohm --cookie secret

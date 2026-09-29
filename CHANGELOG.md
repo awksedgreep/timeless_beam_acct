@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `mix igniter.install timeless_beam_acct`, which configures a collector
+  to start with an application and to stay off while its tests run.
+  Igniter is an optional dependency, for this and nothing else.
 - An application, a group, or a table that has emptied is reported as
   nothing for as long as it keeps its place, and a peer that has gone is
   reported once more, as nothing. Its last sample said before that it
