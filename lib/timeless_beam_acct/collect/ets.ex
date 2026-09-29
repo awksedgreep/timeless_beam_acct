@@ -36,6 +36,12 @@ defmodule TimelessBeamAcct.Collect.Ets do
   whose own name is `other` is counted there too: two series cannot share
   a name and a label.
 
+  A name that has a place is reported at every reading, as nothing while
+  there is no table of that name, and so is `other` once there has been
+  one. A reader takes the last sample of a series as its value, and the
+  last sample of a table that was deleted would otherwise say that it
+  holds what it last held.
+
   ## Reading
 
   Each table is read with four calls of `:ets.info/2`. One call of
@@ -57,10 +63,12 @@ defmodule TimelessBeamAcct.Collect.Ets do
 
   @type state :: %__MODULE__{
           admission: Admission.t(),
-          labels: %{atom() => Batch.labels()}
+          labels: %{atom() => Batch.labels()},
+          others: boolean()
         }
 
-  defstruct admission: nil, labels: %{}
+  # `others` is whether `other` has been reported, and so is from then on.
+  defstruct admission: nil, labels: %{}, others: false
 
   @doc "A collector with room for `options.max_tables` names."
   @spec new(Options.t()) :: state()
@@ -108,27 +116,26 @@ defmodule TimelessBeamAcct.Collect.Ets do
       )
 
     labels =
-      for {name, _} <- by_name, Admission.member?(admission, name), into: %{} do
+      for name <- Admission.members(admission), into: %{} do
         {name, Map.get_lazy(state.labels, name, fn -> [{"table", label(name)}] end)}
       end
 
-    {named, other} =
-      Enum.reduce(by_name, {[], {0, 0, 0}}, fn {name, {bytes, objects, count} = sums},
-                                               {named, {bytes_o, objects_o, count_o} = other} ->
-        case labels do
-          %{^name => label} -> {[{label, sums} | named], other}
-          %{} -> {named, {bytes_o + bytes, objects_o + objects, count_o + count}}
-        end
+    other =
+      Enum.reduce(by_name, {0, 0, 0}, fn {name, {bytes, objects, count}}, {b, o, c} = other ->
+        if is_map_key(labels, name), do: other, else: {b + bytes, o + objects, c + count}
       end)
 
+    # A name that has a place and no table is reported as nothing.
     batch =
-      named
+      labels
+      |> Enum.map(fn {name, label} -> {label, Map.get(by_name, name, {0, 0, 0})} end)
       |> Enum.sort()
       |> Enum.reduce(batch, fn {label, sums}, batch -> push(batch, label, sums) end)
 
-    batch = if elem(other, 2) > 0, do: push(batch, @other, other), else: batch
+    others = state.others or elem(other, 2) > 0
+    batch = if others, do: push(batch, @other, other), else: batch
 
-    {%{state | admission: admission, labels: labels}, batch, by_owner}
+    {%{state | admission: admission, labels: labels, others: others}, batch, by_owner}
   end
 
   defp push(batch, labels, {bytes, objects, count}) do

@@ -16,7 +16,7 @@ for the node itself, with nothing unaccounted for.
 
 ## 1. The canvas decides the shape of a metric
 
-A canvas element selects a series by **host, metric name, and at most one
+A canvas element names a line most easily by **host, metric name, and one
 more label**, and it draws **the last value in each time bucket**.
 
 So, as on a host:
@@ -39,9 +39,21 @@ the host's.
 
 **`host` is the host, and `node` is beside it.** A node's lines belong
 with the lines of the host it runs on, which is what an element's `host`
-chooses by. The cost is that two nodes on one host have series that
-differ only by `node`, which an element cannot choose by as well as by
-`app`. Such a host's collectors are each told a `:host` of their own.
+chooses by, and the host's element takes its colour from the records
+logged under its name, the node's among them.
+
+Two nodes on one host have series that differ only by `node`. An element
+chooses by it as it does by any label: every field of an element that
+does not configure it is a label it chooses by, and choosing a series
+from the list writes all of that series' labels. One more label is what
+a second node costs.
+
+The first version of this document said that an element could not choose
+by `node` as well as by `app`, and that such a host's collectors should
+each be told a `:host` of their own. That would have taken the node from
+beside its host, which is the reason `host` is the host: its samples,
+its records, and its spans would all have been under a name that is no
+host's, and the host's element would not have turned red for them.
 
 ### Work is counted in reductions
 
@@ -93,6 +105,36 @@ The same is done for groups and for tables
 (`TimelessBeamAcct.Admission`): a name that has a place keeps it, and
 keeps it for a few readings while it is absent, since a pool between two
 jobs has no processes and is the same pool when it has them again.
+
+### A name that has a place is reported at every reading
+
+A reader takes the last sample of a series as its value until a newer
+one comes. PromQL looks back five minutes for it. Nothing marks a series
+as over, so the last sample of a pool that has emptied would go on
+saying, for five minutes, that the pool is as full as it last was.
+
+A group, an application, or a table that has a place is therefore
+reported at every reading, and as nothing while it has nothing. "This
+pool has no processes" is a reading, and a true one. When the name has
+been absent long enough to lose its place, the last samples of its
+series are of nothing, and are true whatever a reader's window. A peer
+that has gone is reported once more, as nothing, for the same reason.
+
+It follows that a name does not move into `other` while it is there to
+be reported. What is in `other` is what arrived when there was no room,
+and what came back after losing its place.
+
+**A process is not given a last sample of nothing.** Its series is of
+one process, and ends when the process does. A sum over the processes of
+a group is therefore right only if the reader's window is about the
+sweep interval, which is what `beam_acct_sweep_interval_seconds` is
+there to tell it, and what the README says to ask with. It is also what
+timeless-acct does, and the two are read by the same readers.
+
+A last sample of nothing would make such a sum right under any window,
+and would leave a count wrong: a series whose last sample is nothing is
+still a series. What makes both right is a sample that says the series
+has ended, which the planes would have to understand.
 
 ### What the totals hold, and what they do not
 
@@ -486,17 +528,20 @@ Ordered by how much each would add.
    native code. It would make the records' figures exact and the totals
    complete, and it is the one thing here that cannot be done by a
    collector that is only its own modules.
-2. **Reading the stores.** `top`, `exits`, and `trees` read what the
+2. **A sample that says a series has ended**, for the processes that
+   have series. It needs the planes to understand one. Until then a
+   reader has to be told the window to ask with.
+3. **Reading the stores.** `top`, `exits`, and `trees` read what the
    collector has in memory, which is the last few minutes. A moment last
    Tuesday is in the stores, and is looked at on a canvas.
-3. **Memory a process holds outside its heap.** A large binary is held by
+4. **Memory a process holds outside its heap.** A large binary is held by
    reference, and is counted once for the node and not against the
    processes that hold it. Asking a process for its binaries costs a walk
    of its heap, so it would be asked of the processes that have series.
-4. **Ports**: sockets and files, each with what it has read and written,
+5. **Ports**: sockets and files, each with what it has read and written,
    and the process that owns it.
-5. **A smaller table.** A row of the table of processes is 470 bytes,
+6. **A smaller table.** A row of the table of processes is 470 bytes,
    mostly the names a process goes by, written out in every row. They
    could be written once.
-6. **Jobs longer than an hour.** What a job starts after its first hour
+7. **Jobs longer than an hour.** What a job starts after its first hour
    is a trace of its own.

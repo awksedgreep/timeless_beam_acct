@@ -44,6 +44,16 @@ defmodule TimelessBeamAcct.AdmissionTest do
     assert Admission.member?(admission, :a)
   end
 
+  test "the names that have a place are those present and those still waited for" do
+    admission =
+      Admission.new(3, linger: 1)
+      |> Admission.reading(a: 1, b: 1)
+      |> Admission.reading(b: 1, c: 1)
+
+    assert Enum.sort(Admission.members(admission)) == [:a, :b, :c]
+    assert admission |> Admission.reading(b: 1) |> Admission.members() |> Enum.sort() == [:b, :c]
+  end
+
   test "equals are admitted by name" do
     admission = Admission.new(2) |> Admission.reading(c: 1, a: 1, b: 1)
     assert Admission.member?(admission, :a)

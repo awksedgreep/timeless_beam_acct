@@ -150,6 +150,59 @@ defmodule TimelessBeamAcct.ProcessesTest do
       assert Enum.sort(labelled(again, "beam_group_processes", :group)) == Enum.sort(groups)
     end
 
+    test "a group that has emptied is reported as nothing, until it loses its place" do
+      name = unique(:emptied_pool)
+      pid = worker(name: name)
+      {state, batch, _, _} = sweep(new())
+      assert value(batch, "beam_group_processes", group: "emptied_pool") == 1
+      stop(pid)
+
+      # Its last sample would otherwise say it is as full as it last was.
+      # The first of these sweeps finds it gone, which is something of
+      # it; it is absent from the next, and waited for for six.
+      {state, reported} =
+        Enum.reduce(1..8, {state, []}, fn _, {state, reported} ->
+          {state, batch, _, _} = sweep(state)
+          {state, [batch | reported]}
+        end)
+
+      [last | earlier] = reported
+
+      for batch <- earlier do
+        assert value(batch, "beam_group_processes", group: "emptied_pool") == 0
+        assert value(batch, "beam_group_memory_bytes", group: "emptied_pool") == 0
+        assert value(batch, "beam_group_reductions_per_sec", group: "emptied_pool") == 0
+      end
+
+      assert all(last, "beam_group_processes", group: "emptied_pool") == []
+      {_state, batch, _, _} = sweep(state)
+      assert all(batch, "beam_group_processes", group: "emptied_pool") == []
+    end
+
+    test "once there has been an other, there is one at every reading" do
+      {_state, batch, _, _} = sweep(new(max_groups: 1_000))
+      assert all(batch, "beam_group_processes", group: "other") == []
+
+      state = new(max_groups: 3)
+      {state, batch, _, _} = sweep(state)
+      assert value(batch, "beam_group_processes", group: "other") > 0
+      {_state, batch, _, _} = sweep(state)
+      assert value(batch, "beam_group_processes", group: "other") > 0
+    end
+
+    test "an application that has stopped is reported as nothing" do
+      state = new()
+      owner = spawn(fn -> receive(do: (:stop -> :ok)) end)
+      {state, batch, _, _} = sweep(state, %{Process.whereis(:kernel_sup) => 4096})
+      assert value(batch, "beam_app_ets_bytes", app: "kernel") == 4096
+
+      # Nothing of it is left but its name: the tables are gone.
+      {_state, batch, _, _} = sweep(state, %{})
+      assert value(batch, "beam_app_ets_bytes", app: "kernel") == 0
+      assert value(batch, "beam_app_processes", app: "kernel") > 0
+      send(owner, :stop)
+    end
+
     test "a queue that is long is seen in its group" do
       pid = spawn_link(fn -> receive(do: (:never -> :ok)) end)
       for _ <- 1..50, do: send(pid, :wait)

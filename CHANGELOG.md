@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- An application, a group, or a table that has emptied is reported as
+  nothing for as long as it keeps its place, and a peer that has gone is
+  reported once more, as nothing. Its last sample said before that it
+  was as full as it last was, and a reader that looks back five minutes
+  for the last sample read that for five minutes. (#2)
+- Once there has been an `other`, there is one at every reading.
+- README: what window a PromQL reader should ask with, and where the
+  interval it follows is reported. (#2)
+- README and DESIGN.md: two nodes on one host are told apart by `node`,
+  and not by telling each collector a `:host` of its own. (#1)
+- `top`, by age: the processes that were running before the collector
+  come before those it heard the start of.
+
 ## 0.1.0
 
 The first version.

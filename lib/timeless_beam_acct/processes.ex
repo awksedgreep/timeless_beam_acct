@@ -32,6 +32,13 @@ defmodule TimelessBeamAcct.Processes do
   given afresh at each sweep to whoever was largest, a process near the
   edge would be a line on one reading and absent from the next.
 
+  ## A name that has a place is reported at every reading
+
+  A group or an application that has no processes is reported as having
+  none, for as long as it keeps its place. A reader takes the last sample
+  of a series as its value, and the last sample of a pool that has
+  emptied would otherwise say that it is as full as it last was.
+
   ## What the totals hold
 
   The totals of a group are over every living process in it, whatever its
@@ -68,6 +75,9 @@ defmodule TimelessBeamAcct.Processes do
     last: nil,
     vm_reductions: 0,
     groups: nil,
+    apps: nil,
+    # Whether `other` has been reported, and so is reported from then on.
+    others: false,
     admitted: 0,
     # Starts, ends, and failures since the last sweep, by group and by
     # application.
@@ -77,6 +87,8 @@ defmodule TimelessBeamAcct.Processes do
   ]
 
   @figures [:reductions, :memory, :message_queue_len, :registered_name]
+  # More than there are of anything that is reported without a limit.
+  @every 1_000_000
 
   @doc """
   The table is made here, and belongs to the process that calls this.
@@ -98,7 +110,10 @@ defmodule TimelessBeamAcct.Processes do
       incarnation: Lineage.incarnation(),
       max_age: native(options.trace_max_age),
       min_age: native(options.min_age),
-      groups: Admission.new(options.max_groups)
+      groups: Admission.new(options.max_groups),
+      # Every application is reported by name. They are kept as the
+      # groups are so that one that stops is reported as nothing.
+      apps: Admission.new(@every)
     }
   end
 
@@ -445,16 +460,15 @@ defmodule TimelessBeamAcct.Processes do
     living = for {group, total} <- found.groups, do: {group, total.memory + total.work}
     present = Map.merge(Map.new(brief), Map.new(living), fn _group, a, b -> a + b end)
     state = %{state | groups: Admission.reading(state.groups, present)}
+    {state, batch} = report_groups(state, batch, found.groups, context)
+
+    {state, batch} =
+      if state.options.apps,
+        do: report_apps(state, batch, found.apps, by_owner, context),
+        else: {state, batch}
 
     batch =
       batch
-      |> report_groups(state, found.groups, context)
-      |> then(
-        &if(state.options.apps,
-          do: report_apps(&1, state, found.apps, by_owner, context),
-          else: &1
-        )
-      )
       |> Batch.push("beam_acct_processes", found.processes)
       |> Batch.push("beam_acct_processes_reported", state.admitted)
       |> Batch.push("beam_acct_groups", map_size(found.groups))
@@ -746,34 +760,60 @@ defmodule TimelessBeamAcct.Processes do
 
   ## Totals
 
-  defp report_groups(batch, state, groups, context) do
+  # A name that has a place is reported at every reading, as nothing
+  # while it has nothing, so that the last sample of a pool that has
+  # emptied does not say it is as full as it last was.
+  defp report_groups(state, batch, groups, context) do
     tallies = state.tallies.groups
-    names = Map.keys(groups) ++ (Map.keys(tallies) -- Map.keys(groups))
+    places = Admission.members(state.groups)
+    names = Enum.uniq(Map.keys(groups) ++ Map.keys(tallies) ++ places)
 
-    names
-    |> Enum.group_by(fn name ->
-      if Admission.member?(state.groups, name), do: name, else: "other"
-    end)
-    |> Enum.sort()
-    |> Enum.reduce(batch, fn {reported_as, names}, batch ->
-      report_total(batch, "beam_group", [{"group", reported_as}], names, groups, tallies, context)
-    end)
+    by_report =
+      Enum.group_by(names, fn name ->
+        if Admission.member?(state.groups, name), do: name, else: "other"
+      end)
+
+    # Once there has been an `other`, there is one at every reading.
+    others = state.others or is_map_key(by_report, "other")
+    by_report = if others, do: Map.put_new(by_report, "other", []), else: by_report
+
+    batch =
+      by_report
+      |> Enum.sort()
+      |> Enum.reduce(batch, fn {reported_as, names}, batch ->
+        report_total(
+          batch,
+          "beam_group",
+          [{"group", reported_as}],
+          names,
+          groups,
+          tallies,
+          context
+        )
+      end)
+
+    {%{state | others: others}, batch}
   end
 
-  defp report_apps(batch, state, apps, by_owner, context) do
+  defp report_apps(state, batch, apps, by_owner, context) do
     tallies = state.tallies.apps
     tables = tables_by_app(state, by_owner)
-    names = Enum.uniq(Map.keys(apps) ++ Map.keys(tallies) ++ Map.keys(tables))
+    present = Enum.uniq(Map.keys(apps) ++ Map.keys(tallies) ++ Map.keys(tables))
+    admission = Admission.reading(state.apps, Enum.map(present, &{&1, 0}))
 
-    names
-    |> Enum.sort()
-    |> Enum.reduce(batch, fn name, batch ->
-      labels = [{"app", name}]
+    batch =
+      admission
+      |> Admission.members()
+      |> Enum.sort()
+      |> Enum.reduce(batch, fn name, batch ->
+        labels = [{"app", name}]
 
-      batch
-      |> report_total("beam_app", labels, [name], apps, tallies, context)
-      |> Batch.push("beam_app_ets_bytes", labels, Map.get(tables, name, 0))
-    end)
+        batch
+        |> report_total("beam_app", labels, [name], apps, tallies, context)
+        |> Batch.push("beam_app_ets_bytes", labels, Map.get(tables, name, 0))
+      end)
+
+    {%{state | apps: admission}, batch}
   end
 
   defp tables_by_app(state, by_owner) do

@@ -184,9 +184,48 @@ when one is killed; see
 
 Every series carries `host` and `node`. `host` is the host's name, so that
 a node's lines are beside those timeless-acct records of the host it runs
-on. An element chooses by host, metric, and one label more, so where a
-host runs two nodes, tell each collector a `:host` of its own, such as
-`ohm/app`.
+on, and the host's element takes its colour from the node's records too.
+
+Where a host runs more than one node, an element chooses by `node` as
+well:
+
+| field | value |
+|---|---|
+| host | `ohm` |
+| metric | `beam_app_memory_bytes` |
+| series label | `app` = `my_app` |
+| `node` | `app@ohm` |
+
+Every field of an element that does not configure it is a label it
+chooses by, so `node` is one more. Choosing a series from the list in the
+properties panel writes all of its labels, `node` among them. With `node`
+set to a canvas variable, `$node`, one canvas shows whichever node the
+variable names.
+
+### Reading with PromQL
+
+PromQL takes, for each series, the last sample in a window before the
+moment asked about: five minutes, unless it is told otherwise. A process
+that ended writes no more samples, so with five minutes it is counted for
+five minutes after it ended. And a process that is alive is not there at
+all if the window is shorter than the time between two sweeps.
+
+So ask with a window of about three times the sweep interval:
+
+| reading | is told by |
+|---|---|
+| the planes | `lookback_delta=30s` on the request |
+| `timeless_metrics` in the node | `config :timeless_metrics, promql_lookback_seconds: 30` |
+
+The interval is `:process_interval`, ten seconds unless told, and longer
+while sweeps are taking more than `:sweep_budget` allows. What it is at
+any moment is `beam_acct_sweep_interval_seconds`.
+
+This matters to whatever adds up or ranks `beam_proc_*`: a sum over a
+group's processes, a `topk`. The other tiers say so themselves when a
+name has nothing: an application, a group, or a table that has emptied
+is reported as nothing, and a peer that has gone is reported once more,
+as nothing. Their last samples are true whatever the window.
 
 ### To the stores in the node
 
@@ -259,13 +298,16 @@ here. Label: `table`, the table's name.
 
 Tables of one name are added together, and `beam_ets_tables` says how
 many there were. The `:max_tables` largest names are reported, and the
-rest together as `other`.
+rest together as `other`, by the rule that groups are: a name that has a
+place is reported at every reading, as nothing while there is no table of
+that name.
 
 ### Other nodes: `beam_dist_*`
 
 `beam_dist_nodes`, and for each connection, under `peer`:
 `beam_dist_in_bytes_per_sec`, `beam_dist_out_bytes_per_sec`,
-`beam_dist_queue_bytes`.
+`beam_dist_queue_bytes`. A peer that has gone is reported once more, as
+nothing.
 
 ### Applications: `beam_app_*`, and groups: `beam_group_*`
 
@@ -283,7 +325,8 @@ of their own. Label: `app`, or `group`.
 | `beam_app_ets_bytes` | the tables owned by the application's processes |
 
 A process is of the application whose processes started it. The VM's own
-processes, and those started from a shell, are of `none`.
+processes, and those started from a shell, are of `none`. An application
+that has stopped is reported as nothing for six readings more.
 
 How a group is named:
 
@@ -304,7 +347,15 @@ removed, and fifty workers are one line, added together. They can be told
 apart in `beam_proc_*`.
 
 The `:max_groups` largest groups are reported by name, and the rest
-together as `other`. A group that has a place keeps it.
+together as `other`.
+
+A group that has a place keeps it, and is reported at every reading: as
+nothing, while it has no processes. It loses its place when it has been
+absent for more than six readings, so the last samples of its series are
+of nothing. A group does not move into `other` while it is there to be
+reported. What is in `other` is what arrived when there was no room, and
+what came back after losing its place. Once there has been an `other`,
+there is one at every reading.
 
 ### Processes: `beam_proc_*`
 

@@ -102,6 +102,35 @@ defmodule TimelessBeamAcct.Collect.Dist do
 
     batch = Batch.push(batch, "beam_dist_nodes", nodes)
 
+    batch
+    |> report_gone(previous, connections)
+    |> report_connected(before, connections, seconds)
+  end
+
+  # A peer that was connected at the reading before and is not now is
+  # reported once more, as nothing. Its last sample would otherwise go on
+  # being read as what passes between the nodes.
+  defp report_gone(batch, %{connections: before}, connections) do
+    now = for {{peer, _controller}, _} <- connections, into: MapSet.new(), do: peer
+
+    before
+    |> Enum.map(fn {{peer, _controller}, _} -> peer end)
+    |> Enum.uniq()
+    |> Enum.reject(&MapSet.member?(now, &1))
+    |> Enum.sort()
+    |> Enum.reduce(batch, fn peer, batch ->
+      labels = [{"peer", Atom.to_string(peer)}]
+
+      batch
+      |> Batch.push("beam_dist_queue_bytes", labels, 0)
+      |> Batch.push("beam_dist_in_bytes_per_sec", labels, 0)
+      |> Batch.push("beam_dist_out_bytes_per_sec", labels, 0)
+    end)
+  end
+
+  defp report_gone(batch, _no_reading_before, _connections), do: batch
+
+  defp report_connected(batch, before, connections, seconds) do
     connections
     |> Enum.sort_by(fn {{peer, _controller}, _counters} -> peer end)
     |> Enum.reduce(batch, fn {{peer, _controller} = connection, counters}, batch ->

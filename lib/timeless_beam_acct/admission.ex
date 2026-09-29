@@ -9,6 +9,18 @@ defmodule TimelessBeamAcct.Admission do
 
   A name that is absent keeps its place for a few readings: a pool between
   two jobs has no processes, and is the same pool when it has them again.
+
+  ## A name that has a place is reported at every reading
+
+  While it is absent it is reported as nothing: no processes, no memory.
+  A reader takes the last sample of a series as its value until a newer
+  one comes, and the last sample of a pool that has emptied would
+  otherwise say that it is as full as it last was. So the last samples of
+  a name that loses its place are of nothing.
+
+  A name does not move into `other` while it is there to be reported.
+  What is in `other` is what arrived when there was no room, and what
+  came back after losing its place.
   """
 
   @type name :: term()
@@ -66,6 +78,10 @@ defmodule TimelessBeamAcct.Admission do
   @doc "Whether a name is reported as itself."
   @spec member?(t(), name()) :: boolean()
   def member?(%__MODULE__{members: members}, name), do: is_map_key(members, name)
+
+  @doc "The names that have a place, present or not."
+  @spec members(t()) :: [name()]
+  def members(%__MODULE__{members: members}), do: Map.keys(members)
 
   @doc "How many names have a place."
   @spec size(t()) :: non_neg_integer()

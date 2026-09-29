@@ -609,7 +609,8 @@ defmodule TimelessBeamAcct.Report do
   was: it is at least that old.
 
     * `:sort`: `:work`, which is the default, `:memory`, `:queue`, or
-      `:age`. Most first, and the processes with no figure last.
+      `:age`. Most first, and the processes with no figure last. By age,
+      those that were running before the collector was come first.
     * `:n`: how many processes to show. 20 unless given.
     * `:app`: only the processes of this application.
     * `:group`: only the processes that are this. A snapshot's process is
@@ -654,9 +655,14 @@ defmodule TimelessBeamAcct.Report do
           (group == nil or (process[:group] || process[:name]) == group)
       end)
       |> Enum.sort_by(fn process ->
+        # By age, a process whose start was not heard of comes before
+        # those whose start was: it was running before anyone listened,
+        # and is older than it was seen to be.
+        older = by == :age_seconds and process[:age_known] == false
+
         case process[by] do
-          nil -> {true, 0, pid_order(process[:pid])}
-          figure -> {false, -figure, pid_order(process[:pid])}
+          nil -> {true, not older, 0, pid_order(process[:pid])}
+          figure -> {false, not older, -figure, pid_order(process[:pid])}
         end
       end)
       |> Enum.take(count!(opts, :n, 20))

@@ -1052,8 +1052,10 @@ defmodule TimelessBeamAcct.ReportTest do
       assert several() |> snapshot() |> Report.top(sort: :queue) |> order() ==
                ["fn in MyApp.Foo.bar/2", "code_server", "MyApp.Idle", "MyApp.Worker"]
 
+      # The one that was running before anyone listened is older than it
+      # was seen to be, and comes first.
       assert several() |> snapshot() |> Report.top(sort: :age) |> order() ==
-               ["MyApp.Idle", "code_server", "MyApp.Worker", "fn in MyApp.Foo.bar/2"]
+               ["code_server", "MyApp.Idle", "MyApp.Worker", "fn in MyApp.Foo.bar/2"]
 
       assert_raise ArgumentError, "sort: :cpu is not :work, :memory, :queue, or :age", fn ->
         Report.top(snapshot(several()), sort: :cpu)

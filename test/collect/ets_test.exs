@@ -116,17 +116,55 @@ defmodule TimelessBeamAcct.Collect.EtsTest do
       refute is_map_key(tables, "second")
     end
 
-    test "a name that is absent is not reported, and has its place when it is back" do
+    test "a name that is absent is reported as nothing, and has its place when it is back" do
       owner = self()
       state = collector(1)
+      nothing = %{bytes: 0, objects: 0, tables: 0}
 
       {state, _tables, _} = report(state, [{:pool, 500, 1, owner}, {:cache, 100, 1, owner}])
       {state, tables, _} = report(state, [{:cache, 100, 1, owner}])
-      assert tables == %{"other" => %{bytes: 100, objects: 1, tables: 1}}
+
+      # Its last sample would otherwise say it holds what it last held.
+      assert tables == %{
+               "pool" => nothing,
+               "other" => %{bytes: 100, objects: 1, tables: 1}
+             }
 
       {_state, tables, _} = report(state, [{:pool, 5, 1, owner}, {:cache, 100, 1, owner}])
       assert tables["pool"].bytes == 5
       assert tables["other"].bytes == 100
+    end
+
+    test "a name that has lost its place is no longer reported" do
+      owner = self()
+      state = collector(1)
+      {state, _, _} = report(state, [{:pool, 500, 1, owner}])
+
+      # For as many readings as a name is waited for, and one more.
+      {state, reported} =
+        Enum.reduce(1..7, {state, []}, fn _, {state, reported} ->
+          {state, tables, _} = report(state, [])
+          {state, [tables | reported]}
+        end)
+
+      [last | earlier] = reported
+      assert last == %{}
+      assert Enum.all?(earlier, &(&1 == %{"pool" => %{bytes: 0, objects: 0, tables: 0}}))
+
+      {_state, tables, _} = report(state, [{:cache, 100, 1, owner}])
+      assert Map.keys(tables) == ["cache"]
+    end
+
+    test "once there has been an other, there is one at every reading" do
+      owner = self()
+      state = collector(1)
+
+      {state, tables, _} = report(state, [{:pool, 500, 1, owner}])
+      refute is_map_key(tables, "other")
+
+      {state, _, _} = report(state, [{:pool, 500, 1, owner}, {:cache, 100, 1, owner}])
+      {_state, tables, _} = report(state, [{:pool, 500, 1, owner}])
+      assert tables["other"] == %{bytes: 0, objects: 0, tables: 0}
     end
 
     test "memory by owner is over all tables, whether reported by name or not" do

@@ -111,6 +111,35 @@ defmodule TimelessBeamAcct.Collect.DistTest do
     end
   end
 
+  test "a peer that is gone is reported once more, as nothing" do
+    here = controller()
+
+    connected = %{nodes: 1, connections: %{{:a@ohm, here} => counters(1000, 2000, 50)}}
+    gone = %{nodes: 0, connections: %{}}
+
+    samples = report(connected, gone, 10.0)
+
+    assert samples["beam_dist_nodes"] == 0
+    assert samples[{"beam_dist_queue_bytes", "a@ohm"}] == 0
+    assert samples[{"beam_dist_in_bytes_per_sec", "a@ohm"}] == 0
+    assert samples[{"beam_dist_out_bytes_per_sec", "a@ohm"}] == 0
+
+    # And not again after that.
+    assert report(gone, gone, 10.0) == %{"beam_dist_nodes" => 0}
+  end
+
+  test "a peer that is connected again by another connection is not gone" do
+    connected = %{nodes: 1, connections: %{{:a@ohm, controller()} => counters(1000, 2000, 50)}}
+    again = %{nodes: 1, connections: %{{:a@ohm, controller()} => counters(10, 20, 5)}}
+
+    samples = report(connected, again, 10.0)
+
+    # What is waiting is of the connection there is, and there are no
+    # rates of a connection that has one reading.
+    assert samples[{"beam_dist_queue_bytes", "a@ohm"}] == 5
+    refute is_map_key(samples, {"beam_dist_in_bytes_per_sec", "a@ohm"})
+  end
+
   test "the nodes connected are counted, on a node that is not distributed too" do
     state = Dist.new(Options.new!([]))
     {state, batch} = Dist.collect(state, Batch.new(0), 1.0)
@@ -207,7 +236,7 @@ defmodule TimelessBeamAcct.Collect.DistConnectedTest do
     end
   end
 
-  test "a peer that is gone is no longer reported", context do
+  test "a peer that is gone is reported once more, as nothing, and then no longer", context do
     if context.cookie do
       peer = start_peer(context.cookie)
 
@@ -218,11 +247,16 @@ defmodule TimelessBeamAcct.Collect.DistConnectedTest do
 
       stop_peer(peer)
 
-      {_state, batch} = Dist.collect(state, Batch.new(0), 101.0)
+      {state, batch} = Dist.collect(state, Batch.new(0), 101.0)
       samples = by_series(batch)
 
       assert samples["beam_dist_nodes"] == before["beam_dist_nodes"] - 1
-      refute Enum.any?(Map.keys(samples), &match?({_name, ^peer}, &1))
+      assert samples[{"beam_dist_queue_bytes", peer}] == 0
+      assert samples[{"beam_dist_in_bytes_per_sec", peer}] == 0
+      assert samples[{"beam_dist_out_bytes_per_sec", peer}] == 0
+
+      {_state, batch} = Dist.collect(state, Batch.new(0), 102.0)
+      refute Enum.any?(Map.keys(by_series(batch)), &match?({_name, ^peer}, &1))
     end
   end
 
