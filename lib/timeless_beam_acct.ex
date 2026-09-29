@@ -35,6 +35,7 @@ defmodule TimelessBeamAcct do
   ## Looking, from a shell on the node
 
       TimelessBeamAcct.check()
+      TimelessBeamAcct.diagnostics()
       TimelessBeamAcct.top()
       TimelessBeamAcct.top(sort: :memory, n: 10)
       TimelessBeamAcct.exits(since: "-5m", failed: true)
@@ -58,6 +59,17 @@ defmodule TimelessBeamAcct do
   }
 
   @type name :: atom()
+
+  @version Mix.Project.config()[:version]
+
+  @doc """
+  The version of the collector: `"#{@version}"`.
+
+  For whatever reads a collector from outside it, to know what it is
+  reading.
+  """
+  @spec version() :: String.t()
+  def version, do: @version
 
   @doc """
   A collector, as a child of a supervisor.
@@ -87,10 +99,23 @@ defmodule TimelessBeamAcct do
   @doc """
   Stop a collector. What ended since the last sweep is accounted, and what
   the sink has waiting is flushed, before this returns.
+
+  A collector that was started with the application, by `start: true`,
+  stays stopped until the application is started again. One that is among
+  the children of a supervisor is that supervisor's to stop: stopped
+  here, it is started again, as any child of a supervisor is.
   """
   @spec stop(name(), timeout()) :: :ok
   def stop(name \\ __MODULE__, timeout \\ 30_000) do
-    Supervisor.stop(Options.name(name, :Supervisor), :normal, timeout)
+    ours = TimelessBeamAcct.Application.Supervisor
+
+    if is_pid(Process.whereis(ours)) and
+         Enum.any?(Supervisor.which_children(ours), &(elem(&1, 0) == name)) do
+      :ok = Supervisor.terminate_child(ours, name)
+      :ok = Supervisor.delete_child(ours, name)
+    else
+      Supervisor.stop(Options.name(name, :Supervisor), :normal, timeout)
+    end
   end
 
   @doc """
@@ -282,6 +307,111 @@ defmodule TimelessBeamAcct do
       {"collector", collector(status)},
       {"", ""}
       | sink(options, status)
+    ]
+  end
+
+  @doc """
+  Print what someone who is asked about a problem will ask for: the
+  versions, what `check/1` says, what the collector was told, and what it
+  has counted.
+
+  It is for pasting into a report. A bearer token is not printed.
+  """
+  @spec diagnostics(keyword()) :: :ok
+  def diagnostics(opts \\ []), do: opts |> diagnosed() |> IO.write()
+
+  @doc """
+  What `diagnostics/1` prints.
+  """
+  @spec diagnosed(keyword()) :: String.t()
+  def diagnosed(opts \\ []) do
+    name = Keyword.get(opts, :name, __MODULE__)
+    status = status(name)
+    lines = checked(name: name)
+    width = lines |> Enum.map(fn {what, _} -> String.length(what) end) |> Enum.max()
+
+    checks =
+      Enum.map(lines, fn
+        {"", ""} -> "\n"
+        {what, how} -> String.pad_trailing(what, width + 3) <> how <> "\n"
+      end)
+
+    IO.iodata_to_binary([
+      "timeless_beam_acct #{@version}\n",
+      "Elixir #{System.version()}, OTP #{System.otp_release()} ",
+      "(erts #{:erlang.system_info(:version)}), ",
+      "#{System.schedulers_online()} schedulers, ",
+      "#{:erlang.system_info(:system_architecture)}\n",
+      "node #{node()}, up #{Report.human_duration(uptime())}\n\n",
+      checks,
+      "\n",
+      told(status),
+      counted(status)
+    ])
+  end
+
+  defp uptime, do: elem(:erlang.statistics(:wall_clock), 0) / 1000
+
+  defp told(nil), do: ""
+
+  # What it was told that a collector told nothing would not have been.
+  defp told(%{options: options}) do
+    unless_told = Options.new!(name: options.name)
+
+    given =
+      for {key, value} <- Map.from_struct(options),
+          key not in [:name, :host, :node],
+          value != Map.fetch!(unless_told, key),
+          do: "  #{key}: #{inspect(unsaid(key, value))}\n"
+
+    case given do
+      [] -> "told nothing but where it is\n\n"
+      given -> ["told\n", Enum.sort(given), "\n"]
+    end
+  end
+
+  defp unsaid(:sink, {module, opts}) do
+    {module,
+     Enum.map(opts, fn
+       {:token, _} -> {:token, "(given)"}
+       other -> other
+     end)}
+  end
+
+  defp unsaid(_key, value), do: value
+
+  defp counted(nil), do: ""
+
+  defp counted(status) do
+    dropped = Map.get(status, :dropped, %{records: 0, ticks: 0})
+
+    tracer =
+      case Map.get(status, :tracer) do
+        %{} = counts ->
+          "tracer     #{if counts.listening, do: "listening", else: "not listening"}, " <>
+            "#{counts.spawns} started, #{counts.exits} ended, " <>
+            "stopped listening #{counts.suspensions} times, #{counts.waiting} waiting, " <>
+            "#{counts.remarks} remarks and #{counts.remarks_dropped} let go\n"
+
+        _ ->
+          "tracer     none\n"
+      end
+
+    writer =
+      case Map.get(status, :writer) do
+        %{} = writer ->
+          "writer     #{writer.written} ticks written, #{writer.failed} failed" <>
+            if(writer.last_error, do: "; the last failure: #{writer.last_error}", else: "") <>
+            "\n"
+
+        _ ->
+          "writer     none\n"
+      end
+
+    [
+      "let go     #{dropped.records} records, #{dropped.ticks} ticks\n",
+      tracer,
+      writer
     ]
   end
 

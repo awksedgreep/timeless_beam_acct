@@ -52,4 +52,27 @@ defmodule TimelessBeamAcct.ApplicationTest do
     refute TimelessBeamAcct.running?()
     assert_receive {:timeless_beam_acct, :close}
   end
+
+  test "a collector that was started with the application can be stopped, and stays stopped" do
+    Process.register(self(), :application_test_stop)
+
+    Application.put_all_env(
+      timeless_beam_acct: [
+        start: true,
+        sink: {:forward, to: :application_test_stop},
+        interval: 3600,
+        process_interval: 3600
+      ]
+    )
+
+    {:ok, _} = Application.ensure_all_started(:timeless_beam_acct)
+    assert TimelessBeamAcct.running?()
+
+    assert TimelessBeamAcct.stop() == :ok
+    assert_receive {:timeless_beam_acct, :close}
+    # It is not started again, as a child that ended would be.
+    Process.sleep(100)
+    refute TimelessBeamAcct.running?()
+    assert Supervisor.which_children(TimelessBeamAcct.Application.Supervisor) == []
+  end
 end

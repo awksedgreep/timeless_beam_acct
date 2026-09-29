@@ -1,23 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- `mix igniter.install timeless_beam_acct`, which configures a collector
-  to start with an application and to stay off while its tests run.
-  Igniter is an optional dependency, for this and nothing else.
-- An application, a group, or a table that has emptied is reported as
-  nothing for as long as it keeps its place, and a peer that has gone is
-  reported once more, as nothing. Its last sample said before that it
-  was as full as it last was, and a reader that looks back five minutes
-  for the last sample read that for five minutes. (#2)
-- Once there has been an `other`, there is one at every reading.
-- README: what window a PromQL reader should ask with, and where the
-  interval it follows is reported. (#2)
-- README and DESIGN.md: two nodes on one host are told apart by `node`,
-  and not by telling each collector a `:host` of its own. (#1)
-- `top`, by age: the processes that were running before the collector
-  come before those it heard the start of.
-
 ## 0.1.0
 
 The first version.
@@ -40,3 +22,18 @@ The first version.
 - `TimelessBeamAcct.Remote` and the `mix timeless_beam_acct.*` tasks,
   which put a collector into a node that is already running, look at it
   from a terminal, and take it out again.
+- `mix igniter.install timeless_beam_acct`, which configures a collector
+  to start with an application and to stay off while its tests run.
+  Igniter is an optional dependency, for this and nothing else.
+- `TimelessBeamAcct.diagnostics/1` and `mix timeless_beam_acct.diagnostics`,
+  which print what a report of a problem should have in it.
+
+Changed before it was released, from what was first written:
+
+- An application, a group, or a table that has emptied is reported as
+  nothing for as long as it keeps its place, and a peer that has gone is
+  reported once more, as nothing. Its last sample said before that it
+  was as full as it last was, and a reader that looks back five minutes
+  for the last sample read that for five minutes. (#2)
+- Two nodes on one host are told apart by `node`, and not by telling
+  each collector a `:host` of its own. (#1)

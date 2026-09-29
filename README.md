@@ -131,6 +131,35 @@ logs plane                http://127.0.0.1:9428  answering
 traces plane              http://127.0.0.1:10428  answering
 ```
 
+### Turning it off
+
+A collector that was started with the application:
+
+```elixir
+config :timeless_beam_acct, start: false
+```
+
+or now, in a node that is running, without a restart:
+
+```elixir
+iex> TimelessBeamAcct.stop()
+```
+
+which stays stopped until the application is started again. A collector
+that is among the children of a supervisor is that supervisor's to stop.
+
+A collector that was put into a node:
+
+```sh
+mix timeless_beam_acct.detach app@ohm --cookie secret
+```
+
+Either way what ended since the last sweep is accounted, what the sink
+has waiting is sent, and the VM is left as it was found: the trace
+session is ended, and the statistics the collector turned on are turned
+off. If the collector's processes are killed instead, the session ends
+with them.
+
 ### In a node that is already running
 
 The node that needs accounting for is the one that is misbehaving now and
@@ -622,6 +651,28 @@ A length of time is a number of seconds, or is written: `"90s"`, `"15m"`.
 If a plane is unreachable, the collector keeps up to an hour of ticks and
 sends them, in order and at the times they were taken, when it answers.
 One plane being down does not hold back what is for the others.
+
+## Reporting a problem
+
+[Issues](https://github.com/awksedgreep/timeless_beam_acct/issues) are
+where. What will be asked for is what this prints, from a shell on the
+node or from a terminal:
+
+```elixir
+iex> TimelessBeamAcct.diagnostics()
+```
+
+```sh
+mix timeless_beam_acct.diagnostics app@ohm --cookie secret
+```
+
+It has the versions, what the node lets a collector see, what the
+collector was told, and what it has counted and let go. A bearer token is
+not printed. The names of processes are not in it, and those of
+applications are not either.
+
+If what is wrong is a figure, say what it was expected to be and where
+that was read: `:observer`, `:recon`, or the application's own count.
 
 ## What is not here yet
 

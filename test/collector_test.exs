@@ -413,6 +413,54 @@ defmodule TimelessBeamAcct.CollectorTest do
       assert printed =~ "[exited custom]"
     end
 
+    test "diagnostics are what a report of a problem should have in it" do
+      name = start(sink: {:forward, to: self()}, min_age: 5, max_records: 77)
+      reading(name)
+
+      said = TimelessBeamAcct.diagnosed(name: name)
+
+      assert said =~ ~r/\Atimeless_beam_acct #{Regex.escape(TimelessBeamAcct.version())}\n/
+      assert said =~ "Elixir #{System.version()}, OTP #{System.otp_release()}"
+      assert said =~ ~r/^node #{node()}, up /m
+      assert said =~ ~r/^collector +running: a sweep of/m
+      # What it was told, and nothing of what it was not.
+      assert said =~ "told\n"
+      assert said =~ "  max_records: 77\n"
+      assert said =~ "  min_age: 5.0\n"
+      refute said =~ "max_groups"
+      assert said =~ ~r/^let go +0 records, 0 ticks$/m
+      assert said =~ ~r/^writer +\d+ ticks written, 0 failed$/m
+
+      printed = capture_io(fn -> assert TimelessBeamAcct.diagnostics(name: name) == :ok end)
+      assert printed =~ "  max_records: 77\n"
+      assert String.split(printed, "\n") |> length() == String.split(said, "\n") |> length()
+    end
+
+    test "a token is not among what is printed" do
+      name =
+        start(
+          sink:
+            {:http,
+             token: "a-secret",
+             metrics_url: "http://127.0.0.1:1",
+             logs_url: "http://127.0.0.1:1",
+             traces_url: "http://127.0.0.1:1",
+             timeout: 0.2}
+        )
+
+      said = TimelessBeamAcct.diagnosed(name: name)
+      refute said =~ "a-secret"
+      assert said =~ ~s(token: "(given\)")
+      assert said =~ "http://127.0.0.1:1"
+    end
+
+    test "diagnostics of a node with no collector say so" do
+      said = TimelessBeamAcct.diagnosed(name: :no_such_collector)
+      assert said =~ "timeless_beam_acct "
+      assert said =~ ~r/^collector +not running$/m
+      refute said =~ "told"
+    end
+
     test "check says what the node lets a collector see" do
       name = start()
       reading(name)

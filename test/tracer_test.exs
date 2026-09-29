@@ -208,6 +208,23 @@ defmodule TimelessBeamAcct.TracerTest do
     refute Enum.any?(:trace.session_info(:all), &match?({^session, _}, &1))
   end
 
+  test "when the tracer is killed, the VM stops sending" do
+    Process.flag(:trap_exit, true)
+    name = :"tracer_test_#{System.unique_integer([:positive])}"
+    options = Options.new!(name: name, sink: :stdout, anomalies: false)
+    {:ok, tracer} = Tracer.start_link(options)
+    session = Options.name(options, :Session)
+    assert Enum.any?(:trace.session_info(:all), &match?({^session, _}, &1))
+
+    # With no chance to end what it began.
+    Process.exit(tracer, :kill)
+    assert_receive {:EXIT, ^tracer, :killed}
+
+    wait_until(fn ->
+      not Enum.any?(:trace.session_info(:all), &match?({^session, _}, &1))
+    end)
+  end
+
   test "without word of exits there is no tracer" do
     options = Options.new!(name: :tracer_test_none, sink: :stdout, exits: false)
     assert Tracer.start_link(options) == :ignore

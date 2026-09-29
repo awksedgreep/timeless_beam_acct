@@ -509,6 +509,10 @@ defmodule TimelessBeamAcct.Remote do
     end
   end
 
+  @doc "Print what a report of a problem should have in it. See `TimelessBeamAcct.diagnostics/1`."
+  @spec diagnostics(node(), keyword()) :: :ok | {:error, reason()}
+  def diagnostics(node, opts \\ []), do: printed(node, :diagnosed, [opts], & &1)
+
   @doc "What the collector in a node has to say of itself. See `TimelessBeamAcct.status/1`."
   @spec status(node(), atom()) :: {:ok, map() | nil} | {:error, reason()}
   def status(node, name \\ TimelessBeamAcct) do

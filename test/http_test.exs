@@ -1,3 +1,6 @@
+# Where an answer is expected, the time allowed for it is generous: it is
+# given back as soon as the answer comes, and a machine that is busy with
+# something else is not a plane that is down.
 defmodule TimelessBeamAcct.HttpTest do
   use ExUnit.Case, async: true
 
@@ -22,7 +25,12 @@ defmodule TimelessBeamAcct.HttpTest do
     headers = [{"Content-Type", "text/plain"}, {"Authorization", "Bearer secret"}]
 
     assert {:ok, 200, "stored"} =
-             Http.post(TestPlane.url(plane) <> "/api/v1/import?a=1", ["m ", ["1"]], headers, 500)
+             Http.post(
+               TestPlane.url(plane) <> "/api/v1/import?a=1",
+               ["m ", ["1"]],
+               headers,
+               5_000
+             )
 
     assert [request] = TestPlane.requests(plane)
     assert request.method == "POST"
@@ -39,23 +47,23 @@ defmodule TimelessBeamAcct.HttpTest do
   test "a get asks for a path and sends no body", %{plane: plane} do
     TestPlane.respond_with(plane, 200, "ok")
 
-    assert {:ok, 200, "ok"} = Http.get(TestPlane.url(plane) <> "/health", [], 500)
+    assert {:ok, 200, "ok"} = Http.get(TestPlane.url(plane) <> "/health", [], 5_000)
 
     assert [%{method: "GET", path: "/health", body: ""} = request] = TestPlane.requests(plane)
     refute Map.has_key?(request.headers, "content-length")
   end
 
   test "a URL with no path asks for the root", %{plane: plane} do
-    assert {:ok, 200, ""} = Http.get(TestPlane.url(plane), [], 500)
+    assert {:ok, 200, ""} = Http.get(TestPlane.url(plane), [], 5_000)
     assert [%{path: "/"}] = TestPlane.requests(plane)
   end
 
   test "a status that is not a success is returned, and is not an error", %{plane: plane} do
     TestPlane.respond_with(plane, 500, "the store is full")
-    assert {:ok, 500, "the store is full"} = Http.post(TestPlane.url(plane), "x", [], 500)
+    assert {:ok, 500, "the store is full"} = Http.post(TestPlane.url(plane), "x", [], 5_000)
 
     TestPlane.respond_with(plane, 401, ~s({"error":"unauthorized"}))
-    assert {:ok, 401, ~s({"error":"unauthorized"})} = Http.get(TestPlane.url(plane), [], 500)
+    assert {:ok, 401, ~s({"error":"unauthorized"})} = Http.get(TestPlane.url(plane), [], 5_000)
   end
 
   test "a body is read whether it has a length, comes in chunks, or ends at the close",
@@ -66,7 +74,7 @@ defmodule TimelessBeamAcct.HttpTest do
     for mode <- [:content_length, :chunked, :until_close] do
       TestPlane.mode(plane, mode)
 
-      assert {:ok, 200, ^body} = Http.post(TestPlane.url(plane), "x", [], 500),
+      assert {:ok, 200, ^body} = Http.post(TestPlane.url(plane), "x", [], 5_000),
              "the body was not read as #{inspect(mode)}"
     end
   end
@@ -74,11 +82,11 @@ defmodule TimelessBeamAcct.HttpTest do
   test "an answer with no body is read as an empty one", %{plane: plane} do
     for mode <- [:content_length, :chunked, :until_close] do
       TestPlane.mode(plane, mode)
-      assert {:ok, 200, ""} = Http.post(TestPlane.url(plane), "x", [], 500)
+      assert {:ok, 200, ""} = Http.post(TestPlane.url(plane), "x", [], 5_000)
     end
 
     TestPlane.respond_with(plane, 204, "")
-    assert {:ok, 204, ""} = Http.post(TestPlane.url(plane), "x", [], 500)
+    assert {:ok, 204, ""} = Http.post(TestPlane.url(plane), "x", [], 5_000)
   end
 
   test "no more of a body is kept than would be shown", %{plane: plane} do
@@ -117,7 +125,7 @@ defmodule TimelessBeamAcct.HttpTest do
 
     :ok = TestPlane.listen(plane)
     assert TestPlane.url(plane) == url
-    assert {:ok, 200, ""} = Http.post(url, "x", [], 500)
+    assert {:ok, 200, ""} = Http.post(url, "x", [], 5_000)
   end
 
   test "a server that accepts and never answers is an error within the time given",
