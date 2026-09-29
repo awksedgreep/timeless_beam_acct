@@ -775,6 +775,10 @@ works on that machine are. For planes that require a token there are
 
 The tests ask nothing of the planes of the machine they run on.
 
+[docs/RELEASING.md](docs/RELEASING.md) is what is run before a version is
+tagged: the suite on each OTP, the planes, and what a person will do
+first.
+
 ## License
 
 [MIT](LICENSE)

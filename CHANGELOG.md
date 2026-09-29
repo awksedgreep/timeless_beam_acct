@@ -19,6 +19,9 @@
   not be run here, and was in the README without having been. What a
   collector does on a VM that cannot be asked for one key of a
   dictionary is tested on one that can. (#9)
+- `docs/RELEASING.md`, which is what is run before a version is tagged,
+  and `scripts/matrix.sh`, which runs the suite on each OTP that is
+  named.
 
 ## 0.1.0
 
