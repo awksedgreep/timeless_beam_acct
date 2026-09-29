@@ -16,9 +16,12 @@ defmodule TimelessBeamAcct.Tracer do
   its own settings, and this is one. On an older VM there is no tracer,
   and processes that end are noticed gone instead.
 
-  A session also has its own system monitor, so what the VM remarks on (a
-  long garbage collection, a long queue) is heard here without taking
-  `:erlang.system_monitor/2` from an application that has set it.
+  Since OTP 28 a session also has its own system monitor, so what the VM
+  remarks on (a long garbage collection, a long queue) is heard here
+  without taking `:erlang.system_monitor/2` from an application that has
+  set it. On OTP 27 a session has none. The node's one system monitor is
+  not taken in its place, for the reason the node's one tracer is not, so
+  there a tracer hears of each start and each end, and of no remarks.
 
   ## What is kept of what is heard
 
@@ -91,6 +94,17 @@ defmodule TimelessBeamAcct.Tracer do
   @spec available?() :: boolean()
   def available? do
     Code.ensure_loaded?(:trace) and function_exported?(:trace, :session_create, 3)
+  end
+
+  @doc """
+  Whether a trace session of this VM has a system monitor of its own,
+  which is what the VM's remarks are heard by.
+
+  Trace sessions are of OTP 27, and `:trace.system/3` of OTP 28.
+  """
+  @spec remarks?() :: boolean()
+  def remarks? do
+    available?() and function_exported?(:trace, :system, 3)
   end
 
   @spec start_link(Options.t()) :: GenServer.on_start()
@@ -222,7 +236,9 @@ defmodule TimelessBeamAcct.Tracer do
         window: {now_ms(), %{}, 0}
       }
 
-      if options.anomalies, do: monitor(session, options)
+      # Asked of a VM that has no `:trace.system/3`, it is a call to a
+      # function that is not there, and the tracer would not start.
+      if options.anomalies and remarks?(), do: monitor(session, options)
       if options.descriptions, do: send(self(), :mark)
       {:ok, listen(state)}
     else

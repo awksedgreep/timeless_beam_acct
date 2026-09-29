@@ -19,6 +19,7 @@ defmodule TimelessBeamAcct.Sink.Http do
   | `:logs_url` | `http://127.0.0.1:9428` | the logs plane |
   | `:traces_url` | `http://127.0.0.1:10428` | the traces plane |
   | `:token` | | a bearer token, for planes started with authentication required |
+  | `:metrics_token`, `:logs_token`, `:traces_token` | `:token` | the token of one plane |
   | `:timeout` | `5` | seconds a plane is given to answer, for the whole of a request: a number, or written as `"5s"` or `"1m"` |
   | `:backlog` | `360` | ticks kept while a plane is unreachable. At a ten-second interval the default holds an hour |
 
@@ -42,6 +43,28 @@ defmodule TimelessBeamAcct.Sink.Http do
   415, 422). It would say so again, and everything behind the body would
   wait for the hour it takes to be dropped. Such a body is let go, and
   counted, and the write is still said to have failed.
+
+  The logs plane does not refuse a body for a line it cannot read. It
+  stores the lines it can, answers 200, and says how many of each there
+  were: `{"entries":41,"errors":1}`. That is a success to anything that
+  reads only the status, and a record lost without a word. So what the
+  logs plane says is read, and a body it read only a part of is counted
+  with those that were refused, and the write said to have failed. It is
+  not sent again: the lines that were read are stored, and would be
+  stored twice.
+
+  The metrics plane answers 204 whatever it could read, so a line of
+  samples it cannot read is not known of here. Its `/health` counts them,
+  as `import_errors`.
+
+  ## A token for each plane
+
+  A plane started with `TIMELESS_AUTH_MODE=required` takes a token that
+  was issued for its signal, and answers 401 to one issued for another.
+  Three planes are three tokens, so each plane may be given its own:
+  `:metrics_token`, `:logs_token`, `:traces_token`. `:token` is what a
+  plane is sent that was not given one, which is all that is needed where
+  one proxy stands before the three and asks for one token.
 
   ## One thing differs from timeless-acct on purpose
 
@@ -82,6 +105,9 @@ defmodule TimelessBeamAcct.Sink.Http do
     logs_url: "http://127.0.0.1:9428",
     traces_url: "http://127.0.0.1:10428",
     token: nil,
+    metrics_token: nil,
+    logs_token: nil,
+    traces_token: nil,
     timeout: 5,
     backlog: 360
   ]
@@ -92,13 +118,20 @@ defmodule TimelessBeamAcct.Sink.Http do
   @shown 200
   # What a plane answers when it is the body that is wrong.
   @refusals [400, 413, 415, 422]
+  # What each plane says it is, when asked how it is.
+  @named %{
+    metrics: "timeless-metrics-api",
+    logs: "timeless-logs-api",
+    traces: "timeless-traces-api"
+  }
+  @names Map.values(@named)
 
   @type plane :: :metrics | :logs | :traces
 
   @type t :: %__MODULE__{
           bases: %{plane() => String.t()},
           endpoints: %{plane() => String.t()},
-          token: String.t() | nil,
+          tokens: %{plane() => String.t() | nil},
           timeout_ms: pos_integer(),
           backlog: :queue.queue({plane(), binary()}),
           waiting: non_neg_integer(),
@@ -107,11 +140,11 @@ defmodule TimelessBeamAcct.Sink.Http do
           refused: non_neg_integer()
         }
 
-  @enforce_keys [:bases, :endpoints, :timeout_ms, :capacity]
+  @enforce_keys [:bases, :endpoints, :tokens, :timeout_ms, :capacity]
   defstruct [
     :bases,
     :endpoints,
-    :token,
+    :tokens,
     :timeout_ms,
     :capacity,
     backlog: :queue.new(),
@@ -130,14 +163,14 @@ defmodule TimelessBeamAcct.Sink.Http do
     with :ok <- known(opts),
          opts = Keyword.merge(@defaults, opts),
          {:ok, bases} <- bases(opts),
-         {:ok, token} <- token(opts[:token]),
+         {:ok, tokens} <- tokens(opts),
          {:ok, timeout_ms} <- timeout(opts[:timeout]),
          {:ok, backlog} <- backlog(opts[:backlog]) do
       {:ok,
        %__MODULE__{
          bases: bases,
          endpoints: Map.new(bases, fn {plane, base} -> {plane, base <> @paths[plane]} end),
-         token: token,
+         tokens: tokens,
          timeout_ms: timeout_ms,
          # A tick is up to three bodies, one per plane.
          capacity: max(backlog, 1) * 3
@@ -186,15 +219,27 @@ defmodule TimelessBeamAcct.Sink.Http do
 
   defp base(_url), do: :error
 
+  # A plane's own token, or the one given for all of them.
+  defp tokens(opts) do
+    Enum.reduce_while(@planes, {:ok, %{}}, fn plane, {:ok, tokens} ->
+      key = if opts[:"#{plane}_token"], do: :"#{plane}_token", else: :token
+
+      case token(opts[key]) do
+        {:ok, token} -> {:cont, {:ok, Map.put(tokens, plane, token)}}
+        {:error, why} -> {:halt, {:error, "#{inspect(key)} #{why}"}}
+      end
+    end)
+  end
+
   defp token(nil), do: {:ok, nil}
 
   defp token(token) when is_binary(token) do
     if token != "" and String.printable?(token) and not String.contains?(token, ["\r", "\n"]),
       do: {:ok, token},
-      else: {:error, ":token cannot be sent as a header"}
+      else: {:error, "cannot be sent as a header"}
   end
 
-  defp token(_token), do: {:error, ":token is not a string"}
+  defp token(_token), do: {:error, "is not a string"}
 
   defp timeout(written) when is_number(written) or is_binary(written) do
     case Clock.parse_span(written) do
@@ -265,7 +310,7 @@ defmodule TimelessBeamAcct.Sink.Http do
   @spec dropped(t()) :: non_neg_integer()
   def dropped(%__MODULE__{dropped: dropped}), do: dropped
 
-  @doc "How many bodies a plane has refused, and were let go."
+  @doc "How many bodies a plane has refused, or read only a part of, and were let go."
   @spec refused(t()) :: non_neg_integer()
   def refused(%__MODULE__{refused: refused}), do: refused
 
@@ -278,21 +323,29 @@ defmodule TimelessBeamAcct.Sink.Http do
 
   The planes answer for `/health` without asking who is asking, so this
   says that a plane is there and not that it will accept the token.
+
+  A plane answers with some sixty figures about itself, and among them
+  what it is. What it is is what is said: `answering:
+  timeless-metrics-api 0.8.5`. The three planes answer for `/health`
+  alike, so one that is reached at the URL of another would be said to be
+  answering, and would then refuse everything it was sent as something it
+  has no route for. A plane that says it is another of the three is
+  reported as that, and as a failure.
   """
   @spec check(t()) :: [{plane(), String.t(), {:ok, String.t()} | {:error, String.t()}}]
   def check(%__MODULE__{bases: bases} = state) do
     @planes
     |> Enum.map(fn plane ->
       base = Map.fetch!(bases, plane)
-      {plane, base, Task.async(fn -> health(state, base) end)}
+      {plane, base, Task.async(fn -> health(state, plane, base) end)}
     end)
     |> Enum.map(fn {plane, base, task} -> {plane, base, Task.await(task, :infinity)} end)
   end
 
-  defp health(state, base) do
-    case Http.get(base <> "/health", authorization(state), @check_timeout_ms) do
+  defp health(state, plane, base) do
+    case Http.get(base <> "/health", authorization(state, plane), @check_timeout_ms) do
       {:ok, status, body} when status in 200..299 ->
-        {:ok, answering(body)}
+        answering(plane, body)
 
       {:ok, status, body} ->
         {:error, "/health answered #{status}" <> detail(body)}
@@ -302,12 +355,39 @@ defmodule TimelessBeamAcct.Sink.Http do
     end
   end
 
-  defp answering(body) do
-    line = body |> String.split() |> Enum.join(" ")
+  defp answering(plane, body) do
+    case said(body) do
+      %{"build" => %{"name" => name} = build} when is_binary(name) ->
+        is =
+          case build do
+            %{"version" => version} when is_binary(version) -> name <> " " <> version
+            _ -> name
+          end
+
+        if name in @names and name != Map.fetch!(@named, plane),
+          do: {:error, "answering as #{is}, which is not the #{plane} plane"},
+          else: {:ok, answering(is)}
+
+      _ ->
+        {:ok, answering(body)}
+    end
+  end
+
+  # What is said of a plane is one line, and short, or is left unsaid.
+  defp answering(text) do
+    line = text |> String.split() |> Enum.join(" ")
 
     if line != "" and String.length(line) <= @shown and String.printable?(line),
       do: "answering: " <> line,
       else: "answering"
+  end
+
+  # What a plane answered, if it answered with an object.
+  defp said(body) do
+    case JSON.decode(body) do
+      {:ok, %{} = said} -> said
+      _ -> nil
+    end
   end
 
   ## What is waiting
@@ -367,11 +447,18 @@ defmodule TimelessBeamAcct.Sink.Http do
 
   defp post(state, plane, body) do
     url = Map.fetch!(state.endpoints, plane)
-    headers = [{"Content-Type", Map.fetch!(@content_types, plane)} | authorization(state)]
+    headers = [{"Content-Type", Map.fetch!(@content_types, plane)} | authorization(state, plane)]
 
     case Http.post(url, body, headers, state.timeout_ms) do
-      {:ok, status, _body} when status in 200..299 ->
-        :ok
+      {:ok, status, answer} when status in 200..299 ->
+        case unread(plane, answer) do
+          nil ->
+            :ok
+
+          {read, unread} ->
+            {:refused,
+             "#{url} could not read #{unread} of the records it was sent, and stored #{read}"}
+        end
 
       {:ok, status, body} when status in @refusals ->
         {:refused, "#{url} refused what it was sent, with #{status}" <> detail(body)}
@@ -384,8 +471,26 @@ defmodule TimelessBeamAcct.Sink.Http do
     end
   end
 
-  defp authorization(%__MODULE__{token: nil}), do: []
-  defp authorization(%__MODULE__{token: token}), do: [{"Authorization", "Bearer " <> token}]
+  # How many records the logs plane read and how many it could not, if
+  # there were any it could not. It says so with a status of 200.
+  defp unread(:logs, answer) when answer != "" do
+    case said(answer) do
+      %{"errors" => unread} = counts when is_integer(unread) and unread > 0 ->
+        {Map.get(counts, "entries", 0), unread}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp unread(_plane, _answer), do: nil
+
+  defp authorization(%__MODULE__{tokens: tokens}, plane) do
+    case Map.fetch!(tokens, plane) do
+      nil -> []
+      token -> [{"Authorization", "Bearer " <> token}]
+    end
+  end
 
   # What a plane said, as the end of a sentence.
   defp detail(body) do

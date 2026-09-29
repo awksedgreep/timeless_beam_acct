@@ -1,7 +1,8 @@
 defmodule TimelessBeamAcct.Sink.TimelessTest do
   use ExUnit.Case, async: true
 
-  alias TimelessBeamAcct.{Batch, Event, FakeLogs, FakeMetrics, FakeStores, FakeTraces, Span, Tick}
+  alias TimelessBeamAcct.{Batch, Encode, Event, FakeLogs, FakeMetrics, FakeStores, FakeTraces}
+  alias TimelessBeamAcct.{Span, Tick}
   alias TimelessBeamAcct.{FakeTracesLibrary, FakeWithNothing, FakeWithoutFlush}
   alias TimelessBeamAcct.Sink
   alias TimelessBeamAcct.Sink.Timeless
@@ -9,6 +10,8 @@ defmodule TimelessBeamAcct.Sink.TimelessTest do
   @host "ohm"
   @node "acct@ohm"
   @ts 1_753_000_000
+  # Not text: what a process may have raised with.
+  @bytes <<255, 254>>
 
   @fakes [
     metrics: :acct,
@@ -212,6 +215,56 @@ defmodule TimelessBeamAcct.Sink.TimelessTest do
       assert [ingest: [entries]] = FakeStores.calls(:logs)
       assert Enum.map(entries, & &1.message) == ["exit 1", "exit 2", "exit 3"]
     end
+
+    test "of a process that raised with bytes that are not text do not cost the tick its records" do
+      # What `Ending.of/1` makes of `raise "request " <> <<255, 254>> <> " could not be parsed"`.
+      raised = %{
+        event()
+        | message: "Busy.Request.handle/1<0.99.0> crashed: " <> @bytes,
+          fields: %{"reason" => "RuntimeError: request " <> @bytes <> " could not be parsed"}
+      }
+
+      events = [event(), raised, event()]
+      assert {:ok, state} = Timeless.write(sink(), @host, @node, tick(events: events))
+      assert state.lost_ticks == 0
+
+      assert [ingest: [[_, entry, _]]] = FakeStores.calls(:logs)
+      assert entry.message == "Busy.Request.handle/1<0.99.0> crashed: \uFFFD\uFFFD"
+      assert entry.metadata["reason"] == "RuntimeError: request \uFFFD\uFFFD could not be parsed"
+    end
+
+    test "are what a plane is sent of them, whatever is in their fields" do
+      strange = %{
+        event()
+        | message: "exited: " <> @bytes,
+          fields: %{
+            "reason" => "bytes " <> @bytes,
+            "kind" => :crashed,
+            "pid" => self(),
+            "detail" => {:shutdown, :brutal},
+            "reductions" => 4242,
+            "memory_mb" => 2.5,
+            "trapping" => true
+          }
+      }
+
+      sent =
+        @host |> Encode.ndjson(@node, [strange]) |> IO.iodata_to_binary() |> JSON.decode!()
+
+      assert [entry] = Timeless.entries(@host, @node, [strange])
+      assert entry.message == sent["_msg"]
+      assert entry.metadata == Map.drop(sent, ["_msg", "_time", "level"])
+      assert entry.metadata["reductions"] === 4242
+      assert entry.metadata["memory_mb"] === 2.5
+      assert entry.metadata["trapping"] === true
+    end
+
+    test "that are text are handed over as they were made, and nothing is built again" do
+      event = event()
+      assert [entry] = Timeless.entries(@host, @node, [event])
+      assert :erts_debug.same(entry.message, event.message)
+      assert :erts_debug.same(entry.metadata["pid"], event.fields["pid"])
+    end
   end
 
   describe "spans" do
@@ -271,6 +324,67 @@ defmodule TimelessBeamAcct.Sink.TimelessTest do
 
       assert [:ok, :error, :unset] ==
                Enum.map(Timeless.spans(@host, @node, spans), & &1.status)
+    end
+
+    test "of a process that raised with bytes that are not text do not cost the tick its spans" do
+      raised =
+        span(
+          name: "Busy " <> @bytes,
+          ending: "crashed: " <> @bytes,
+          attributes: %{
+            "process.exit.reason" => "RuntimeError: request " <> @bytes,
+            "process.reductions" => 4242
+          }
+        )
+
+      spans = [span(), raised, span()]
+      assert {:ok, state} = Timeless.write(sink(), @host, @node, tick(spans: spans))
+      assert state.lost_ticks == 0
+
+      assert [ingest: [[_, stored, _]]] = FakeStores.calls(:traces)
+      assert stored.name == "Busy \uFFFD\uFFFD"
+      assert stored.status_message == "crashed: \uFFFD\uFFFD"
+
+      assert stored.attributes == %{
+               "process.exit.reason" => "RuntimeError: request \uFFFD\uFFFD",
+               "process.reductions" => 4242
+             }
+    end
+
+    test "are what a plane is sent of them, whatever is in their attributes" do
+      strange =
+        span(
+          name: "Busy " <> @bytes,
+          ending: "crashed: " <> @bytes,
+          attributes: %{
+            "process.exit.reason" => "bytes " <> @bytes,
+            "process.kind" => :crashed,
+            "process.detail" => {:shutdown, :brutal},
+            "process.reductions" => 4242,
+            "process.memory_mb" => 2.5,
+            "process.trapping" => true
+          }
+        )
+
+      %{"resourceSpans" => [%{"resource" => resource, "scopeSpans" => [%{"spans" => [sent]}]}]} =
+        @host |> Encode.otlp_json(@node, [strange]) |> IO.iodata_to_binary() |> JSON.decode!()
+
+      read = fn attributes ->
+        Map.new(attributes, fn %{"key" => key, "value" => value} ->
+          [read] = Map.values(value)
+          {key, read}
+        end)
+      end
+
+      assert [stored] = Timeless.spans(@host, @node, [strange])
+      assert stored.name == sent["name"]
+      assert stored.status_message == sent["status"]["message"]
+      assert stored.attributes == read.(sent["attributes"])
+      assert stored.resource == read.(resource["attributes"])
+      assert stored.attributes["process.kind"] == ":crashed"
+      assert stored.attributes["process.reductions"] === 4242
+      assert stored.attributes["process.memory_mb"] === 2.5
+      assert stored.attributes["process.trapping"] === true
     end
 
     test "are taken by the library a level down, where it has no ingest of its own" do

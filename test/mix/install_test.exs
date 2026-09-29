@@ -71,9 +71,23 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
              TimelessBeamAcct.Options.new!(options)
   end
 
-  test "the stores in the node are asked for by name" do
+  test "for the stores in the node, the collector is put among the children, after them" do
     igniter = install(~w(--sink timeless))
-    assert configured(igniter, "config/config.exs") == [start: true, sink: :timeless]
+
+    assert igniter.issues == []
+    application = content(igniter, "lib/demo/application.ex")
+
+    assert application =~
+             ~r/children = \[\s*Demo\.Worker,\s*\{TimelessBeamAcct, \[?sink: :timeless\]?\}\s*\]/
+
+    # It is not started from the configuration as well: it would be
+    # started before the stores are, and the application would not start.
+    assert configured(igniter, "config/config.exs") == []
+    assert content(igniter, "config/test.exs") == nil
+
+    assert [notice] = igniter.notices
+    assert notice =~ "stores in the node"
+    assert notice =~ "among the children"
   end
 
   test "the planes are where they are said to be" do
@@ -103,7 +117,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
     config :timeless_beam_acct, start: false, sink: :stdout, min_age: 5
     """
 
-    igniter = install(~w(--sink timeless), files(config))
+    igniter = install(~w(--sink http), files(config))
 
     assert configured(igniter, "config/config.exs") == [start: false, sink: :stdout, min_age: 5]
   end
@@ -121,9 +135,6 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
     assert notice =~ "TimelessBeamAcct.check()"
     assert notice =~ "config :timeless_beam_acct, start: false"
     assert notice =~ "Timeless planes"
-
-    assert [notice] = install(~w(--sink timeless)).notices
-    assert notice =~ "stores in the node"
   end
 
   test "a sink that is not one is refused, and nothing is written" do

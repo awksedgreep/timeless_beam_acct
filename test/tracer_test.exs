@@ -1,6 +1,9 @@
 defmodule TimelessBeamAcct.TracerTest do
   use ExUnit.Case, async: true
 
+  # Of OTP 27, and called only where it is found.
+  @compile {:no_warn_undefined, [{:proc_lib, :set_label, 1}, :trace]}
+
   alias TimelessBeamAcct.{Ending, Identity, Options, Tracer}
 
   @moduletag skip: if(Tracer.available?(), do: false, else: "this VM has no trace sessions")
@@ -232,6 +235,12 @@ defmodule TimelessBeamAcct.TracerTest do
   end
 
   describe "remarks" do
+    @describetag skip:
+                   if(Tracer.remarks?(),
+                     do: false,
+                     else: "a trace session of this VM has no system monitor"
+                   )
+
     test "a heap that grows large is remarked on once, however often it is collected" do
       {_options, handle} = start(anomalies: true, large_heap: 1024 * 1024)
 
@@ -271,6 +280,30 @@ defmodule TimelessBeamAcct.TracerTest do
                wait_for(handle, :remark, pid)
 
       send(pid, :stop)
+    end
+  end
+
+  describe "where a trace session has no system monitor" do
+    @describetag skip:
+                   if(Tracer.available?() and not Tracer.remarks?(),
+                     do: false,
+                     else: "a trace session of this VM has a system monitor, or there is none"
+                   )
+
+    test "a tracer told to hear remarks starts, hears of processes, and remarks on nothing" do
+      {_options, handle} = start(anomalies: true, large_heap: 1024 * 1024)
+
+      pid =
+        spawn(fn ->
+          list = Enum.to_list(1..400_000)
+          receive(do: (:stop -> length(list)))
+        end)
+
+      Process.sleep(100)
+      send(pid, :stop)
+
+      assert [{_, :born, _, ^pid, _}, {_, :exit, _, ^pid, _}] = heard(handle, [pid])
+      assert %{remarks: 0, remarks_dropped: 0, listening: true} = Tracer.counts(handle)
     end
   end
 

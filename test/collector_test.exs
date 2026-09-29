@@ -2,6 +2,10 @@ defmodule TimelessBeamAcct.CollectorTest do
   # Not with the others: a collector hears of every process of the node.
   use ExUnit.Case, async: false
 
+  # A VM older than OTP 27 has no such module, and the tests that name it
+  # are not run there.
+  @compile {:no_warn_undefined, :trace}
+
   import ExUnit.CaptureIO
   import ExUnit.CaptureLog
   import TimelessBeamAcct.Samples
@@ -300,6 +304,11 @@ defmodule TimelessBeamAcct.CollectorTest do
       assert value(tick.metrics, "beam_acct_trace_suspensions") == 0
     end
 
+    @tag skip:
+           if(Tracer.remarks?(),
+             do: false,
+             else: "a trace session of this VM has no system monitor"
+           )
     test "what the VM remarks on is recorded, of the process it is remarked of" do
       name = start(anomalies: true, large_heap: 1024 * 1024)
       reading(name)
@@ -348,6 +357,45 @@ defmodule TimelessBeamAcct.CollectorTest do
       assert tick.spans == []
       assert value(tick.metrics, "beam_acct_trace_listening") == nil
       assert TimelessBeamAcct.status(name).exits == :not_asked_for
+    end
+  end
+
+  describe "on a VM that has no trace sessions" do
+    @describetag skip: if(Tracer.available?(), do: "this VM has trace sessions", else: false)
+
+    test "a collector told to hear of exits starts, and says that it cannot" do
+      name = start(exits: true, descriptions: true, anomalies: true, traces: true)
+      reading(name)
+
+      assert TimelessBeamAcct.status(name).exits == :unavailable
+      assert TimelessBeamAcct.status(name).tracer == nil
+      assert Tracer.handle(name) == nil
+    end
+
+    test "a process that ends is noticed gone, if it lived to a sweep, and has no span" do
+      name = start(exits: true, traces: true)
+      {pid, ref} = spawn_monitor(fn -> receive(do: (:stop -> exit(:custom))) end)
+      reading(name)
+      send(pid, :stop)
+      assert_receive {:DOWN, ^ref, _, _, _}
+
+      tick = reading(name)
+      record = record_of(tick, pid)
+
+      # Why it ended was said to no one.
+      assert %{level: :info, fields: %{"source" => "sampled", "status" => "unknown"}} = record
+      assert tick.spans == []
+      assert TimelessBeamAcct.spans(name) == []
+      assert value(tick.metrics, "beam_acct_trace_listening") == nil
+    end
+
+    test "a process shorter than a sweep is not seen" do
+      name = start()
+      reading(name)
+      pid = run(fn -> exit(:custom) end)
+
+      assert record_of(reading(name), pid) == nil
+      assert record_of(reading(name), pid) == nil
     end
   end
 
@@ -455,8 +503,20 @@ defmodule TimelessBeamAcct.CollectorTest do
     end
 
     test "diagnostics of a node with no collector say so" do
-      said = TimelessBeamAcct.diagnosed(name: :no_such_collector)
+      # Told where the planes are, which is nowhere, so that those running
+      # on this machine are not asked whether they are there.
+      nowhere = "http://127.0.0.1:1"
+
+      said =
+        TimelessBeamAcct.diagnosed(
+          name: :no_such_collector,
+          metrics_url: nowhere,
+          logs_url: nowhere,
+          traces_url: nowhere
+        )
+
       assert said =~ "timeless_beam_acct "
+      assert said =~ "#{nowhere}  connection refused"
       assert said =~ ~r/^collector +not running$/m
       refute said =~ "told"
     end
@@ -481,10 +541,31 @@ defmodule TimelessBeamAcct.CollectorTest do
       printed = capture_io(fn -> assert TimelessBeamAcct.check(name: name) == :ok end)
       assert printed =~ ~r/^processes +\d+ of \d+$/m
 
-      # Of a collector that is not running, and told nothing.
-      checked = Map.new(TimelessBeamAcct.checked(name: :no_such_collector))
+      # Of a collector that is not running. It is told where the planes
+      # are, which is nowhere: told nothing, it would ask the planes that
+      # are running on this machine whether they are there.
+      nowhere = "http://127.0.0.1:1"
+
+      checked =
+        Map.new(
+          TimelessBeamAcct.checked(
+            name: :no_such_collector,
+            metrics_url: nowhere,
+            logs_url: nowhere,
+            traces_url: nowhere
+          )
+        )
+
       assert checked["collector"] == "not running"
-      assert checked["metrics plane"] =~ "http://127.0.0.1:8428"
+      assert checked["metrics plane"] == "#{nowhere}  connection refused"
+
+      # A trace session has a system monitor a release after there were
+      # trace sessions.
+      if Tracer.remarks?() do
+        assert checked["what the VM remarks on"] == "heard"
+      else
+        assert checked["what the VM remarks on"] =~ "unavailable: needs OTP 28, and this is OTP "
+      end
     end
   end
 

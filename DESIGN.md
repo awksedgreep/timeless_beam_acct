@@ -246,11 +246,16 @@ find out what was wrong, and lost its own exits to the next person who
 did. A trace session has its own tracer and its own settings, and any
 number of them hear of the same process.
 
-A session also has its own system monitor, so what the VM remarks on is
-heard without taking `:erlang.system_monitor/2` from an application that
-has set it.
+Since OTP 28 a session also has its own system monitor
+(`:trace.system/3`), so what the VM remarks on is heard without taking
+`:erlang.system_monitor/2` from an application that has set it. On
+OTP 27 a session has none. The node's one system monitor is not taken
+in its place, for the reason the node's one tracer is not: there the
+collector accounts for every exit and records no remarks, and says so.
 
-On an older VM there is no tracer, and the collector says so.
+On an older VM there is no tracer, and the collector says so. What is
+made of the VM's word of each exit is not made there: a process noticed
+gone has a record, and no span.
 
 ### What the VM does not say
 

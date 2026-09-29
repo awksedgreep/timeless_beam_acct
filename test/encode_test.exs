@@ -201,6 +201,43 @@ defmodule TimelessBeamAcct.EncodeTest do
     end
   end
 
+  describe "what is not text" do
+    test "is made text: bytes replaced, an atom by its name, the rest as it is inspected" do
+      assert Encode.printable("exited: " <> <<255, 254>>) == "exited: \uFFFD\uFFFD"
+      assert Encode.printable(:crashed) == "crashed"
+      assert Encode.printable({:shutdown, :brutal}) == "{:shutdown, :brutal}"
+      assert Encode.printable(self()) == inspect(self())
+
+      assert Encode.printable(%{
+               "reason" => <<255>>,
+               "n" => 1,
+               kind: :crashed,
+               at: ["a", <<254>>]
+             }) ==
+               %{"reason" => "\uFFFD", "n" => 1, "kind" => "crashed", "at" => ["a", "\uFFFD"]}
+    end
+
+    test "leaves a number a number and a flag a flag" do
+      assert Encode.printable(4242) === 4242
+      assert Encode.printable(6.0e-5) === 6.0e-5
+      assert Encode.printable(true) === true
+      assert Encode.printable(nil) === nil
+    end
+
+    test "is what a plane would have been sent" do
+      fields = %{"reason" => "bytes " <> <<255, 254>>, "kind" => :crashed, "pid" => self()}
+      event = %Event{ts_us: 1, level: :error, message: "m", fields: fields}
+      line = "h" |> Encode.ndjson("n", [event]) |> IO.iodata_to_binary() |> JSON.decode!()
+
+      assert Encode.printable(fields) == Map.take(line, Map.keys(fields))
+    end
+
+    test "gives back what is text already, and builds nothing" do
+      fields = %{"pid" => "<0.7.0>", "reductions" => 4242, "crashed" => true, "at" => ["a"]}
+      assert :erts_debug.same(Encode.printable(fields), fields)
+    end
+  end
+
   describe "spans" do
     defp span(service, parent, ok) do
       %Span{

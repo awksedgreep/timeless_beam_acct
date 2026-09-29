@@ -58,12 +58,14 @@ iex> TimelessBeamAcct.trees(failed: true, limit: 1)
 
 Version 0.1.0. Collection, the sinks, putting a collector into a running
 node, and the three views work and are tested against a live VM, on
-OTP 28 and 29. [What is not here yet](#what-is-not-here-yet) is listed at
-the end, and [DESIGN.md](DESIGN.md) explains the decisions.
+OTP 27, 28 and 29, and on OTP 26 without exit accounting.
+[What is not here yet](#what-is-not-here-yet) is listed at the end, and
+[DESIGN.md](DESIGN.md) explains the decisions.
 
-Elixir 1.18 or later. Exit accounting needs OTP 27 or later; on an older
-VM the collector runs without it. A collector has no dependencies when it
-runs. Igniter is an optional one, for the installer.
+Elixir 1.18 or later. Exit accounting needs OTP 27 or later, and what the
+VM remarks on needs OTP 28 or later; on an older VM the collector runs
+without them. A collector has no dependencies when it runs. Igniter is an
+optional one, for the installer.
 
 ## Quick start
 
@@ -79,7 +81,9 @@ mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --s
 It configures a collector to start with the application, and to stay off
 while the application's tests run. `--sink` is `http` (the default),
 `timeless`, or `stdout`, and `--metrics-url`, `--logs-url`, and
-`--traces-url` say where the planes are.
+`--traces-url` say where the planes are. With `--sink timeless` the
+collector is put among the application's children instead, after the
+stores it writes to.
 
 Or by hand:
 
@@ -126,9 +130,9 @@ collector                 running: a sweep of 75 processes took 2ms, every 10.0s
 
 sink                      http: http://127.0.0.1:8428/api/v1/import/prometheus, ...
 written                   6 ticks, 0 failed
-metrics plane             http://127.0.0.1:8428  answering
-logs plane                http://127.0.0.1:9428  answering
-traces plane              http://127.0.0.1:10428  answering
+metrics plane             http://127.0.0.1:8428  answering: timeless-metrics-api 0.8.5
+logs plane                http://127.0.0.1:9428  answering: timeless-logs-api 0.8.5
+traces plane              http://127.0.0.1:10428  answering: timeless-traces-api 0.8.5
 ```
 
 ### Turning it off
@@ -284,6 +288,29 @@ its own, can be accounted into them, with no server and no network:
 What is stored is what the planes would have stored of the same tick:
 the same names, the same labels, the same keys.
 
+With this sink a collector is one of the application's own children, and
+comes after the stores among them:
+
+```elixir
+children = [
+  {TimelessPhoenix, data_dir: "priv/observability"},
+  {TimelessBeamAcct, sink: :timeless}
+]
+```
+
+The stores have to be running when the collector starts, and a collector
+started by `start: true` in the configuration starts before any child of
+the application does. `mix igniter.install --sink timeless` puts it among
+the children.
+
+There is nothing kept for a store that is not running: it is in the same
+node, and what it would come back to is gone with it. What could not be
+stored is counted, and the other two signals are stored all the same.
+
+The older engines of `timeless_logs` and `timeless_traces` (`engine:
+:elixir`) read a record of level `notice` as `info` once it has been
+compacted. The libSQL engines keep it.
+
 ## What the VM lets a collector see
 
 On any VM the collector runs. Each release adds something:
@@ -292,13 +319,19 @@ On any VM the collector runs. Each release adds something:
 |---|---|
 | 25 | VM statistics; applications; groups; processes that live to a sweep; the parent of each |
 | 26.2 | one key of a process's dictionary asked for, and not the whole of it |
-| 27 | trace sessions: word of each process that starts and ends, and what the VM remarks on, without taking the tracer or the system monitor from whoever has them |
-| 28 | the processes read one at a time, and not listed first |
+| 27 | trace sessions: word of each process that starts and ends, without taking the tracer from whoever has it |
+| 28 | what the VM remarks on, without taking the system monitor from whoever has it; the processes read one at a time, and not listed first |
 
 Without trace sessions, a process that was there at one sweep and gone at
 the next gets a record marked `source: "sampled"`, with the figures of the
 last sweep that saw it and a status of `unknown`. Processes shorter than a
-sweep are not seen.
+sweep are not seen, and no spans are kept.
+
+On OTP 27 a trace session has no system monitor of its own, and the
+node's one is not taken in its place: every exit is accounted, and
+nothing the VM remarks on is recorded. `:descriptions`, `:traces` and
+`:anomalies` are without effect on a VM that cannot do what they ask, and
+`check` says which it cannot.
 
 ## What is recorded
 
@@ -642,8 +675,9 @@ processes there are (`:max_groups`, `:max_processes`).
 | `:max_records` | `5000` | records kept from one tick |
 | `:traces` | `true` | keep a span for each process that ends |
 | `:trace_max_age` | `"1h"` | how long after a job starts a process may start and be part of its trace |
-| `:anomalies` | `true` | record what the VM remarks on |
+| `:anomalies` | `true` | record what the VM remarks on (OTP 28) |
 | `:token` | | planes: a bearer token, if they require one |
+| `:metrics_token`, `:logs_token`, `:traces_token` | `:token` | planes: the token of one plane |
 | `:backlog` | `360` | planes: ticks kept while a plane is unreachable |
 
 A length of time is a number of seconds, or is written: `"90s"`, `"15m"`.
@@ -651,6 +685,12 @@ A length of time is a number of seconds, or is written: `"90s"`, `"15m"`.
 If a plane is unreachable, the collector keeps up to an hour of ticks and
 sends them, in order and at the times they were taken, when it answers.
 One plane being down does not hold back what is for the others.
+
+Planes started with `TIMELESS_AUTH_MODE=required` take a token each: a
+token is issued for one signal, and the plane of another answers it with
+401. So there are three, from `timeless-authctl token mint --signal
+metrics`, `logs`, and `traces`, given as `:metrics_token`, `:logs_token`,
+and `:traces_token`.
 
 ## Reporting a problem
 
@@ -705,6 +745,34 @@ collectors against readings written by hand and against the live VM, the
 tracer and the collection loop against processes the tests start, the
 HTTP sink against a server the tests run, and putting a collector into a
 node against nodes the tests start and stop.
+
+### Against the planes
+
+`test/planes_test.exs` writes one tick through the HTTP sink to planes
+that are running and reads it back from each: the samples, the records,
+and the spans, with their times and their types. It is not part of
+`mix test`, and is run before a release, against planes started for it:
+
+```sh
+ext=/path/to/libtimeless_ext.so
+mkdir -p /tmp/planes
+timeless-metrics-api $ext /tmp/planes/metrics.db 127.0.0.1:28428 &
+timeless-logs-api    $ext /tmp/planes/logs.db    127.0.0.1:29428 &
+timeless-traces-api  $ext /tmp/planes/traces.db  127.0.0.1:30428 &
+
+TIMELESS_TEST_METRICS_URL=http://127.0.0.1:28428 \
+TIMELESS_TEST_LOGS_URL=http://127.0.0.1:29428 \
+TIMELESS_TEST_TRACES_URL=http://127.0.0.1:30428 \
+  mix test --only planes
+```
+
+It must be told where all three are, and refuses ports 8428, 9428, and
+10428 of the machine it runs on, which are where the planes of whoever
+works on that machine are. For planes that require a token there are
+`TIMELESS_TEST_METRICS_TOKEN`, `TIMELESS_TEST_LOGS_TOKEN`, and
+`TIMELESS_TEST_TRACES_TOKEN`.
+
+The tests ask nothing of the planes of the machine they run on.
 
 ## License
 

@@ -14,9 +14,18 @@ The first version.
 - A span for every process that ends, in the trace of the job it was
   part of.
 - What the VM remarks on: long garbage collections, long queues, large
-  heaps, busy ports.
+  heaps, busy ports (OTP 28, which is when a trace session was given a
+  system monitor of its own).
 - Sinks: the Timeless planes over HTTP, the Timeless stores in the node,
   the terminal, and a process.
+- For planes that require one, a token for each: `:metrics_token`,
+  `:logs_token`, and `:traces_token`. A token is issued for one signal,
+  and the plane of another answers it with 401.
+- A record the logs plane could not read is a failed write, though the
+  plane answers 200 to it: it stores the lines it can read and counts
+  those it cannot.
+- `check` says what each plane says it is, and says so as a failure when
+  a plane is reached at the URL of another.
 - `TimelessBeamAcct.top/1`, `exits/1`, `trees/1`, and `check/1`, from a
   shell on the node.
 - `TimelessBeamAcct.Remote` and the `mix timeless_beam_acct.*` tasks,
@@ -37,3 +46,10 @@ Changed before it was released, from what was first written:
   for the last sample read that for five minutes. (#2)
 - Two nodes on one host are told apart by `node`, and not by telling
   each collector a `:host` of its own. (#1)
+
+Run on OTP 26, 27, 28, and 29. On OTP 26, which has no trace sessions,
+a collector runs without word of exits. Written to the planes (0.8.5),
+and to `timeless_metrics` 6.6.7, `timeless_logs` 1.11.2, and
+`timeless_traces` 1.11.1 in the node, and read back from each.
+`test/planes_test.exs` is what writes to planes that are running, and
+is run by `mix test --only planes`.

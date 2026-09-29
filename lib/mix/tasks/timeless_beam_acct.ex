@@ -97,6 +97,7 @@ defmodule Mix.Tasks.TimelessBeamAcct do
       {key, type}
     end ++
       [metrics_url: :string, logs_url: :string, traces_url: :string, token: :string] ++
+      [metrics_token: :string, logs_token: :string, traces_token: :string] ++
       [timeout: :string, backlog: :integer]
   end
 

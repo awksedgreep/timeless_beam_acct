@@ -39,6 +39,19 @@ defmodule TimelessBeamAcct.OptionsTest do
     assert opts[:backlog] == 10
   end
 
+  test "a token for one plane is an option of the planes, as the token for all is" do
+    options = Options.new!(token: "a", logs_token: "b", sink: {:http, traces_token: "c"})
+
+    assert {Sink.Http, opts} = options.sink
+    assert opts[:token] == "a"
+    assert opts[:logs_token] == "b"
+    assert opts[:traces_token] == "c"
+
+    assert_raise ArgumentError, ~r/:metrics_token is an option of the :http sink/, fn ->
+      Options.new!(sink: :stdout, metrics_token: "a")
+    end
+  end
+
   test "the planes' options given to another sink are refused" do
     assert_raise ArgumentError, ~r/:token is an option of the :http sink/, fn ->
       Options.new!(sink: :stdout, token: "a")

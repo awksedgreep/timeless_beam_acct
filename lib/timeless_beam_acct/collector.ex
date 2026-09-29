@@ -107,6 +107,7 @@ defmodule TimelessBeamAcct.Collector do
     Process.flag(:trap_exit, true)
 
     tracer = Tracer.handle(options)
+    options = able(options, tracer)
 
     state = %{
       options: options,
@@ -134,6 +135,12 @@ defmodule TimelessBeamAcct.Collector do
 
     {:ok, state, {:continue, :first}}
   end
+
+  # Spans are made of what the VM says of each exit. On a VM that has no
+  # trace sessions a collector is as one told `exits: false`: what is
+  # noticed gone has a record, and no span.
+  defp able(options, nil), do: %{options | traces: false}
+  defp able(options, _tracer), do: options
 
   defp exits_are(%Options{exits: false}, _tracer), do: :not_asked_for
   defp exits_are(_options, nil), do: :unavailable

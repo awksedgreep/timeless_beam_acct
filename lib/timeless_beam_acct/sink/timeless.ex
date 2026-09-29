@@ -75,6 +75,18 @@ defmodule TimelessBeamAcct.Sink.Timeless do
   `instrumentation_scope`. The resource is `service.name`, `host.name`, and
   `service.instance.id`, which is the node.
 
+  **What is not text** is made text before it is handed over, by
+  `TimelessBeamAcct.Encode.printable/1`, as it is before it is sent to a
+  plane. A process that raised has the message of what it raised in its
+  record and in its span, and a message may hold any bytes: a packet that
+  could not be parsed, say. The libSQL engines of `timeless_logs` 1.11 and
+  `timeless_traces` 1.11 refuse a batch that holds a string that is not
+  valid UTF-8, all of it, and where the string is a message, a name, or a
+  status message the process of the engine ends over it and is started
+  again. The older engines keep the bytes, and give back a string that is
+  not one. So one process would have cost a tick its records and its
+  spans, which is what the encoder is there to prevent.
+
   ## What differs from the routes
 
   The level of a record is handed over as it is. `TimelessLogs`' own
@@ -339,10 +351,10 @@ defmodule TimelessBeamAcct.Sink.Timeless do
       %{
         timestamp: event.ts_us,
         level: event.level,
-        message: event.message,
+        message: Encode.printable(event.message),
         # As the planes are sent it, so that a record is the same record
         # whichever way it arrived.
-        metadata: Encode.event_metadata(host, node, event)
+        metadata: host |> Encode.event_metadata(node, event) |> Encode.printable()
       }
     end
   end
@@ -357,14 +369,14 @@ defmodule TimelessBeamAcct.Sink.Timeless do
         trace_id: Span.hex(span.trace_id),
         span_id: Span.hex(span.span_id),
         parent_span_id: span.parent_span_id && Span.hex(span.parent_span_id),
-        name: span.name,
+        name: Encode.printable(span.name),
         kind: :internal,
         start_time: span.start_ns,
         end_time: span.start_ns + span.duration_ns,
         duration_ns: span.duration_ns,
         status: Span.status(span),
-        status_message: span.ending,
-        attributes: Map.new(span.attributes, fn {key, value} -> {to_string(key), value} end),
+        status_message: Encode.printable(span.ending),
+        attributes: Map.new(span.attributes, &attribute/1),
         events: [],
         resource: resource(host, node, span),
         instrumentation_scope: scope
@@ -372,9 +384,18 @@ defmodule TimelessBeamAcct.Sink.Timeless do
     end
   end
 
+  # An attribute as the OTLP route would have read it from what the
+  # encoder writes: its value a string, a number, or a boolean, and
+  # whatever is none of those as `inspect/1` writes it.
+  defp attribute({key, value}) do
+    [read] = value |> Encode.any_value() |> Map.values()
+    {Encode.printable(to_string(key)), Encode.printable(read)}
+  end
+
   @doc "What a span's resource is: the application, in the node, on the host."
   @spec resource(String.t(), String.t(), Span.t()) :: %{String.t() => String.t()}
-  def resource(host, node, %Span{} = span), do: Encode.resource(host, node, span)
+  def resource(host, node, %Span{} = span),
+    do: host |> Encode.resource(node, span) |> Encode.printable()
 
   @doc "What every span of this collector's is said to come from."
   @spec scope() :: %{name: String.t(), version: String.t() | nil}

@@ -20,6 +20,10 @@ defmodule TimelessBeamAcct.FakeStores do
   | `:exit` | exits, as `GenServer.call/3` does when there is no process |
   | `:hang` | never answers |
   | `:break_link` | is killed by a process it was linked to |
+
+  Untold, a fake refuses what it is handed if there is a string in it
+  that is not valid UTF-8, all of it, as the libSQL engines of the
+  libraries do. What was handed over is recorded all the same.
   """
 
   @type store :: :metrics | :logs | :traces | :unflushed
@@ -61,8 +65,16 @@ defmodule TimelessBeamAcct.FakeStores do
          %{state | calls: [{store, function, arguments} | state.calls]}}
       end)
 
-    act(told, store, function)
+    if told == :ok and not text?(arguments),
+      do: {:error, "the fake #{store} store was handed what is not valid UTF-8"},
+      else: act(told, store, function)
   end
+
+  defp text?(term) when is_binary(term), do: String.valid?(term)
+  defp text?(term) when is_list(term), do: Enum.all?(term, &text?/1)
+  defp text?(term) when is_tuple(term), do: term |> Tuple.to_list() |> text?()
+  defp text?(term) when is_map(term), do: term |> Map.to_list() |> text?()
+  defp text?(_term), do: true
 
   @doc "What was told of a function that is asked and not recorded, like `running?`."
   @spec told(store(), atom(), term()) :: term()

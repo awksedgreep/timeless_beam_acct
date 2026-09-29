@@ -43,7 +43,13 @@ seconds = 60
 
 {:ok, _} = TimelessBeamAcct.start_link(sink: {Bench.Counted, to: self()})
 
-parts = [Collector: "the loop", Tracer: "the tracer", Writer: "the writer"]
+# Those of them there are: on a VM without trace sessions there is no
+# tracer, and the collector runs without one.
+parts =
+  for {name, said} <- [Collector: "the loop", Tracer: "the tracer", Writer: "the writer"],
+      Process.whereis(Module.concat(TimelessBeamAcct, name)),
+      do: {name, said}
+
 reductions = fn name ->
   {:reductions, r} = Process.info(Process.whereis(Module.concat(TimelessBeamAcct, name)), :reductions)
   r
@@ -75,11 +81,16 @@ ticks = collect.(collect, [])
 status = TimelessBeamAcct.status()
 counts = status.tracer
 
+starting =
+  if counts,
+    do: "starting #{round(counts.spawns / (took + 10))} processes a second",
+    else: "on OTP #{System.otp_release()}, which does not say how many it starts: word of each exit is #{status.exits}"
+
 IO.puts("""
 
 #{length(ticks)} ticks in #{Float.round(took, 1)}s of a node with #{status.sweep.processes} processes, \
 #{status.sweep.reported} of them with series of their own,
-starting #{round(counts.spawns / (took + 10))} processes a second
+#{starting}
 
 what the node did           #{TimelessBeamAcct.Human.count((node_after - node_before) / took)} reductions a second, \
 #{Float.round((runtime_after - runtime_before) / 10 / took, 1)}% of one CPU

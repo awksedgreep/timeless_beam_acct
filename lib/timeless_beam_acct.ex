@@ -292,7 +292,7 @@ defmodule TimelessBeamAcct do
       {"trace sessions",
        available(Tracer.available?(), "needs OTP 27, and this is OTP #{release}")},
       {"word of each exit", exits(options, status)},
-      {"what the VM remarks on", remarks(options)},
+      {"what the VM remarks on", remarks(options, release)},
       {"process iterator",
        available(
          function_exported?(:erlang, :processes_iterator, 0),
@@ -316,6 +316,8 @@ defmodule TimelessBeamAcct do
   has counted.
 
   It is for pasting into a report. A bearer token is not printed.
+
+  The options are those of `check/1`.
   """
   @spec diagnostics(keyword()) :: :ok
   def diagnostics(opts \\ []), do: opts |> diagnosed() |> IO.write()
@@ -327,7 +329,7 @@ defmodule TimelessBeamAcct do
   def diagnosed(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
     status = status(name)
-    lines = checked(name: name)
+    lines = checked(opts)
     width = lines |> Enum.map(fn {what, _} -> String.length(what) end) |> Enum.max()
 
     checks =
@@ -435,11 +437,18 @@ defmodule TimelessBeamAcct do
       else: "unavailable: processes that end are noticed gone at the next sweep"
   end
 
-  defp remarks(%Options{anomalies: false}), do: "not asked for"
-  defp remarks(%Options{exits: false}), do: "not heard: they come with word of each exit"
+  defp remarks(%Options{anomalies: false}, _release), do: "not asked for"
 
-  defp remarks(_options),
-    do: if(Tracer.available?(), do: "heard", else: "unavailable: needs OTP 27")
+  defp remarks(%Options{exits: false}, _release),
+    do: "not heard: they come with word of each exit"
+
+  # A trace session has a system monitor of its own a release after there
+  # were trace sessions.
+  defp remarks(_options, release) do
+    if Tracer.remarks?(),
+      do: "heard",
+      else: "unavailable: needs OTP 28, and this is OTP #{release}"
+  end
 
   defp collector(nil), do: "not running"
 

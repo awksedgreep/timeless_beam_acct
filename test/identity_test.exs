@@ -1,6 +1,9 @@
 defmodule TimelessBeamAcct.IdentityTest do
   use ExUnit.Case, async: true
 
+  # Of OTP 27, and called only where it is found.
+  @compile {:no_warn_undefined, {:proc_lib, :set_label, 1}}
+
   alias TimelessBeamAcct.Identity
 
   defmodule Server do

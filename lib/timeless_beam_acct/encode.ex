@@ -203,30 +203,64 @@ defmodule TimelessBeamAcct.Encode do
   def any_value(value) when is_binary(value), do: %{"stringValue" => value}
   def any_value(value), do: %{"stringValue" => inspect(value)}
 
+  @doc """
+  A term as it can be written: a string that is not valid UTF-8 with what
+  is wrong in it replaced, an atom as its name, and whatever else JSON has
+  no spelling for as `inspect/1` writes it. A number, a boolean, and a
+  string that is text are what they were.
+
+  This is what a plane is sent of a record or a span that could not be
+  sent as it was. The stores in the node are handed the same, since they
+  refuse what is not text as JSON does, and a record is to be the same
+  record whichever way it arrived.
+
+  What the collector made is nearly always text already. It is looked at
+  first, and given back as it is, so that nothing is built again for the
+  sake of what is rare.
+  """
+  @spec printable(term()) :: term()
+  def printable(term) do
+    if printable?(term), do: term, else: made_printable(term)
+  end
+
+  defp printable?(value) when is_binary(value), do: String.valid?(value)
+  defp printable?(value) when is_number(value) or is_boolean(value) or is_nil(value), do: true
+  defp printable?(value) when is_list(value), do: Enum.all?(value, &printable?/1)
+
+  defp printable?(value) when is_map(value) and not is_struct(value) do
+    Enum.all?(value, fn {key, inner} ->
+      is_binary(key) and String.valid?(key) and printable?(inner)
+    end)
+  end
+
+  defp printable?(_value), do: false
+
   # Encoding is tried as it is given, which is all that is ever needed when
   # the collector made the term. Only if that fails is the term walked and
   # made printable.
   defp json(term) do
     JSON.encode_to_iodata!(term)
   rescue
-    _ -> term |> printable() |> JSON.encode_to_iodata!()
+    _ -> term |> made_printable() |> JSON.encode_to_iodata!()
   end
 
-  defp printable(value) when is_binary(value) do
+  defp made_printable(value) when is_binary(value) do
     if String.valid?(value), do: value, else: String.replace_invalid(value)
   end
 
-  defp printable(value) when is_number(value) or is_boolean(value) or is_nil(value), do: value
-  defp printable(value) when is_atom(value), do: Atom.to_string(value)
-  defp printable(value) when is_list(value), do: Enum.map(value, &printable/1)
+  defp made_printable(value) when is_number(value) or is_boolean(value) or is_nil(value),
+    do: value
 
-  defp printable(value) when is_map(value) and not is_struct(value) do
-    Map.new(value, fn {key, inner} -> {printable_key(key), printable(inner)} end)
+  defp made_printable(value) when is_atom(value), do: Atom.to_string(value)
+  defp made_printable(value) when is_list(value), do: Enum.map(value, &made_printable/1)
+
+  defp made_printable(value) when is_map(value) and not is_struct(value) do
+    Map.new(value, fn {key, inner} -> {printable_key(key), made_printable(inner)} end)
   end
 
-  defp printable(value), do: inspect(value)
+  defp made_printable(value), do: inspect(value)
 
-  defp printable_key(key) when is_binary(key), do: printable(key)
+  defp printable_key(key) when is_binary(key), do: made_printable(key)
   defp printable_key(key) when is_atom(key), do: Atom.to_string(key)
   defp printable_key(key), do: inspect(key)
 end

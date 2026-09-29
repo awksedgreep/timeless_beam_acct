@@ -33,6 +33,14 @@ if Code.ensure_loaded?(Igniter) do
     What is there already is left as it is: an application that has said
     `start: false` has said so for a reason.
 
+    With `--sink timeless` it does otherwise, and adds
+    `{TimelessBeamAcct, sink: :timeless}` to the children of the
+    application's supervisor, after those that are there. The stores in
+    the node are children of the application, and have to be running
+    when the collector starts. A collector started from the configuration
+    starts before any of them, and the application would not start at
+    all.
+
     ## Why the configuration, and not the supervision tree
 
     A collector asks the VM for word of every process that starts and
@@ -91,6 +99,14 @@ if Code.ensure_loaded?(Igniter) do
               "http sink, and the sink is #{sink}"
           )
 
+        sink == "timeless" ->
+          igniter
+          |> Igniter.Project.Application.add_new_child(
+            {TimelessBeamAcct, {:code, Sourceror.parse_string!("[sink: :timeless]")}},
+            after: fn _child -> true end
+          )
+          |> Igniter.add_notice(notice(sink))
+
         true ->
           igniter
           |> configure("config.exs", :start, true)
@@ -122,6 +138,20 @@ if Code.ensure_loaded?(Igniter) do
           TimelessBeamAcct.check()
           TimelessBeamAcct.top()
 
+      #{how_off(sink)}
+      """
+    end
+
+    defp how_off("timeless") do
+      """
+      It is among the children of the application's supervisor, after the
+      stores it writes to, and runs wherever the application does. To turn
+      it off, take it from among them.
+      """
+    end
+
+    defp how_off(_sink) do
+      """
       It is off while the tests run (config/test.exs). To turn it off
       anywhere else:
 

@@ -55,6 +55,10 @@ defmodule TimelessBeamAcct.Processes do
 
   import TimelessBeamAcct.Tracked
 
+  # Of OTP 28, and called only where they are found.
+  @compile {:no_warn_undefined,
+            [{:erlang, :processes_iterator, 0}, {:erlang, :processes_next, 1}]}
+
   alias TimelessBeamAcct.{Admission, Batch, Ended, Ending, Identity, Lineage, Options, Tracked}
 
   @type exit :: {pid(), Ending.t(), at :: integer()}

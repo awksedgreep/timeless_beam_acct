@@ -127,6 +127,34 @@ defmodule TimelessBeamAcct.Sink.HttpTest do
       end
     end
 
+    test "sends a plane the token that is its own, and the others the one for all", planes do
+      sink = sink(planes, token: "for-all", logs_token: "for-logs")
+      assert {:ok, _} = Sink.write(sink, "h", "n", tick(1))
+
+      assert [%{headers: %{"authorization" => "Bearer for-all"}}] =
+               TestPlane.requests(planes.metrics)
+
+      assert [%{headers: %{"authorization" => "Bearer for-logs"}}] =
+               TestPlane.requests(planes.logs)
+
+      assert [%{headers: %{"authorization" => "Bearer for-all"}}] =
+               TestPlane.requests(planes.traces)
+    end
+
+    test "sends a token to the plane it is for, and none to a plane that has none", planes do
+      sink = sink(planes, metrics_token: "for-metrics", traces_token: "for-traces")
+      assert {:ok, _} = Sink.write(sink, "h", "n", tick(1))
+
+      assert [%{headers: %{"authorization" => "Bearer for-metrics"}}] =
+               TestPlane.requests(planes.metrics)
+
+      assert [logs] = TestPlane.requests(planes.logs)
+      refute Map.has_key?(logs.headers, "authorization")
+
+      assert [%{headers: %{"authorization" => "Bearer for-traces"}}] =
+               TestPlane.requests(planes.traces)
+    end
+
     test "sends no authorization when there is no token", planes do
       assert {:ok, _} = Sink.write(sink(planes), "h", "n", tick(1))
       assert [request] = TestPlane.requests(planes.metrics)
@@ -356,6 +384,45 @@ defmodule TimelessBeamAcct.Sink.HttpTest do
       assert Sink.refused(sink) == 1
     end
 
+    test "that read only some of the records has failed, and is not sent them again", planes do
+      # What the logs plane answers a body with a line in it that it
+      # cannot read: the rest is stored, and the status is 200.
+      sink = sink(planes)
+      TestPlane.respond_with(planes.logs, 200, ~s({"entries":41,"errors":1}))
+
+      assert {:error, error, sink} = Sink.write(sink, "h", "n", tick(1))
+
+      assert error ==
+               "#{TestPlane.url(planes.logs)}#{@logs} could not read 1 of the records " <>
+                 "it was sent, and stored 41 (0 waiting, 0 dropped so far)"
+
+      assert Sink.waiting(sink) == 0
+      assert Sink.refused(sink) == 1
+      assert sample_times(planes.metrics) == [1]
+      assert span_times(planes.traces) == [1]
+
+      TestPlane.respond_with(planes.logs, 204, "")
+      assert {:ok, sink} = Sink.write(sink, "h", "n", tick(2))
+      assert record_times(planes.logs) == [1, 2]
+      assert Sink.refused(sink) == 1
+    end
+
+    test "that read every record has stored them, whatever else it says", planes do
+      TestPlane.respond_with(planes.logs, 200, ~s({"entries":1,"errors":0}))
+      # Only the logs plane counts what it could not read in its answer.
+      TestPlane.respond_with(planes.metrics, 200, ~s({"entries":0,"errors":1}))
+      TestPlane.respond_with(planes.traces, 200, "{}")
+
+      assert {:ok, sink} = Sink.write(sink(planes), "h", "n", tick(1))
+      assert Sink.refused(sink) == 0
+
+      for said <- ["ok", "[1]", ~s({"errors":"1"}), ~s({"errors":-1}), ~s({"errors":)] do
+        TestPlane.respond_with(planes.logs, 200, said)
+        assert {:ok, sink} = Sink.write(sink, "h", "n", tick(2, [:events]))
+        assert Sink.refused(sink) == 0
+      end
+    end
+
     test "is reported without a body if it sent none", planes do
       TestPlane.respond_with(planes.logs, 401, "")
 
@@ -411,6 +478,15 @@ defmodule TimelessBeamAcct.Sink.HttpTest do
       assert {:error, _} = Sink.init(backlog: 1.5)
       assert {:error, _} = Sink.init(token: :secret)
       assert {:error, _} = Sink.init(token: "two\r\nlines")
+      assert {:error, _} = Sink.init(token: "")
+
+      for key <- [:metrics_token, :logs_token, :traces_token] do
+        assert {:error, why} = Sink.init([{key, :secret}, {:token, "good"}])
+        assert why == "#{inspect(key)} is not a string"
+        assert {:error, why} = Sink.init([{key, "two\r\nlines"}])
+        assert why == "#{inspect(key)} cannot be sent as a header"
+      end
+
       assert {:error, _} = Sink.init(%{})
     end
   end
@@ -431,6 +507,65 @@ defmodule TimelessBeamAcct.Sink.HttpTest do
         assert [%{method: "GET", path: "/health"} = request] = TestPlane.requests(plane)
         assert request.headers["authorization"] == "Bearer s3cret"
       end
+    end
+
+    # What the planes answer for /health, as of 0.8.5, cut short.
+    defp health(name, rest) do
+      ~s({"admitted_batches":20,"admitted_points":25971,"buffered_points":1404,) <>
+        ~s("build":{"commit":"726f847fc2129dfcc38a8871aa6974b4e0cf61fb","name":"#{name}",) <>
+        ~s("profile":"release","target":"x86_64-unknown-linux-gnu","version":"0.8.5"},) <>
+        ~s("completed_batches":20,"database_file_bytes":4669440,"import_errors":4,) <>
+        ~s("otel_traces_state":"disabled","queued_points":0,"series":2344,#{rest}})
+    end
+
+    test "says what a plane says it is, and none of the rest of what it says", planes do
+      TestPlane.respond_with(
+        planes.metrics,
+        200,
+        health("timeless-metrics-api", ~s("status":"ok"))
+      )
+
+      TestPlane.respond_with(planes.logs, 200, health("timeless-logs-api", ~s("status":"ok")))
+
+      TestPlane.respond_with(
+        planes.traces,
+        200,
+        health("timeless-traces-api", ~s("status":"ready"))
+      )
+
+      assert Sink.check(sink(planes)) == [
+               {:metrics, TestPlane.url(planes.metrics),
+                {:ok, "answering: timeless-metrics-api 0.8.5"}},
+               {:logs, TestPlane.url(planes.logs), {:ok, "answering: timeless-logs-api 0.8.5"}},
+               {:traces, TestPlane.url(planes.traces),
+                {:ok, "answering: timeless-traces-api 0.8.5"}}
+             ]
+    end
+
+    test "says that a plane is another plane than the one it was taken for", planes do
+      # The URLs of two planes, each given for the other.
+      TestPlane.respond_with(planes.metrics, 200, health("timeless-logs-api", ~s("status":"ok")))
+      TestPlane.respond_with(planes.logs, 200, health("timeless-metrics-api", ~s("status":"ok")))
+      # What is not one of the three is not said to be the wrong one.
+      TestPlane.respond_with(planes.traces, 200, ~s({"build":{"name":"a-proxy"}}))
+
+      assert [
+               {:metrics, _,
+                {:error, "answering as timeless-logs-api 0.8.5, which is not the metrics plane"}},
+               {:logs, _,
+                {:error, "answering as timeless-metrics-api 0.8.5, which is not the logs plane"}},
+               {:traces, _, {:ok, "answering: a-proxy"}}
+             ] = Sink.check(sink(planes))
+    end
+
+    test "asks each plane with the token that is its own", planes do
+      Sink.check(sink(planes, token: "for-all", traces_token: "for-traces"))
+
+      assert [%{headers: %{"authorization" => "Bearer for-all"}}] =
+               TestPlane.requests(planes.metrics)
+
+      assert [%{headers: %{"authorization" => "Bearer for-traces"}}] =
+               TestPlane.requests(planes.traces)
     end
 
     test "says which plane is not there, and which answered something else", planes do

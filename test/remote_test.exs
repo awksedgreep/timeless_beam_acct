@@ -9,7 +9,7 @@ defmodule TimelessBeamAcct.RemoteTest do
 
   import ExUnit.CaptureIO
 
-  alias TimelessBeamAcct.{Cluster, Remote, Tick}
+  alias TimelessBeamAcct.{Cluster, Remote, Tick, Tracer}
 
   @moduletag :distributed
   @moduletag :capture_log
@@ -132,24 +132,33 @@ defmodule TimelessBeamAcct.RemoteTest do
       assert top =~ "PID  APP"
 
       exits = capture_io(fn -> assert Remote.exits(peer, status: "on_purpose") == :ok end)
-      assert exits =~ "on_purpose"
-      assert exits =~ "erpc.execute_call/4" or exits =~ "erlang.exit/1"
-
-      assert exits =~
-               failed
-               |> :erlang.pid_to_list()
-               |> List.to_string()
-               |> String.replace(~r/^<\d+/, "<0")
-
       summary = capture_io(fn -> assert Remote.exits(peer, summary: true, by: :app) == :ok end)
-      assert summary =~ "COUNT  FAILED"
-
       trees = capture_io(fn -> assert Remote.trees(peer, failed: true) == :ok end)
-      assert trees =~ "[exited on_purpose]"
-
       check = capture_io(fn -> assert Remote.check(peer) == :ok end)
+
+      assert summary =~ "COUNT  FAILED"
       assert check =~ ~r/^collector +running: a sweep of/m
-      assert check =~ ~r/^word of each exit +heard/m
+
+      if Tracer.available?() do
+        assert exits =~ "on_purpose"
+        assert exits =~ "erpc.execute_call/4" or exits =~ "erlang.exit/1"
+
+        assert exits =~
+                 failed
+                 |> :erlang.pid_to_list()
+                 |> List.to_string()
+                 |> String.replace(~r/^<\d+/, "<0")
+
+        assert trees =~ "[exited on_purpose]"
+        assert check =~ ~r/^word of each exit +heard/m
+      else
+        # The peer is of the VM the tests are, which does not say what
+        # ended, and the process was gone before any sweep saw it.
+        refute exits =~ "on_purpose"
+        refute trees =~ "on_purpose"
+        assert check =~ ~r/^trace sessions +unavailable: needs OTP 27, and this is OTP \d+$/m
+        assert check =~ ~r/^word of each exit +unavailable: /m
+      end
 
       assert :ok = Remote.detach(peer)
     end

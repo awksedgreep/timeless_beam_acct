@@ -46,7 +46,7 @@ defmodule TimelessBeamAcct.Options do
   | `:traces` | `true` | keep a span for each process that ends |
   | `:trace_max_age` | `"1h"` | how long after a job starts a process may start and be part of its trace |
   | `:trace_roots` | `[]` | modules whose processes start jobs and are not part of them, beside supervisors |
-  | `:anomalies` | `true` | record what the VM remarks on |
+  | `:anomalies` | `true` | record what the VM remarks on (OTP 28) |
   | `:long_gc` | `100` | milliseconds a garbage collection may take unremarked, or `false` |
   | `:long_schedule` | `100` | milliseconds a process may run uninterrupted, or `false` |
   | `:large_heap` | `256 MiB` | the size a heap may reach, or `false` |
@@ -57,6 +57,13 @@ defmodule TimelessBeamAcct.Options do
   | `:trace_max_queue` | `100_000` | messages the tracer may have waiting before it stops listening |
   | `:trace_resume_after` | `5` | seconds it then waits before listening again |
   | `:history` | `2000` | records, and spans, kept in memory for `TimelessBeamAcct.exits/1` and `trees/1`: about a kilobyte each |
+
+  What is asked for here is asked of the VM, and a VM gives what it has.
+  Without trace sessions (OTP 27) no exit is heard of, no span is kept,
+  and nothing is described. Without a system monitor for a trace session
+  (OTP 28) nothing is remarked on. A collector told to do what its VM
+  cannot starts, and does the rest: `TimelessBeamAcct.check/1` says what
+  the VM lacks.
 
   `:exit_levels` defaults to
   `%{normal: :info, abnormal: :notice, killed: :warning, crashed: :error}`.
@@ -73,10 +80,11 @@ defmodule TimelessBeamAcct.Options do
   | `:logs_url` | `http://127.0.0.1:9428` | the logs plane |
   | `:traces_url` | `http://127.0.0.1:10428` | the traces plane |
   | `:token` | | a bearer token, if the planes require one |
+  | `:metrics_token`, `:logs_token`, `:traces_token` | `:token` | the token of one plane: a plane takes a token issued for its signal |
   | `:timeout` | `5` | seconds a plane is given to answer |
   | `:backlog` | `360` | ticks kept while a plane is unreachable |
 
-  The last six are options of the `:http` sink, and may be given beside
+  The last nine are options of the `:http` sink, and may be given beside
   `:sink` or with it.
   """
 
@@ -128,7 +136,8 @@ defmodule TimelessBeamAcct.Options do
             trace_resume_after: 5.0,
             history: 2_000
 
-  @http_keys [:metrics_url, :logs_url, :traces_url, :token, :timeout, :backlog]
+  @http_keys [:metrics_url, :logs_url, :traces_url, :token, :timeout, :backlog] ++
+               [:metrics_token, :logs_token, :traces_token]
   @spans [
     :flush_interval,
     :interval,
