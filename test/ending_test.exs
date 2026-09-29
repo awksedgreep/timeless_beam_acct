@@ -30,6 +30,15 @@ defmodule TimelessBeamAcct.EndingTest do
     assert Ending.words(ending) == "exited timeout"
   end
 
+  test "a list in a reason is written as a list" do
+    # 110 is the letter n, and a list of it alone would be written as text.
+    ending = Ending.of({:timeout, {Busy.Cache, :get, [110]}})
+    assert ending.reason == "{:timeout, {Busy.Cache, :get, [110]}}"
+    assert Ending.of({:bad_bytes, [104, 105]}).reason == "{:bad_bytes, [104, 105]}"
+    # What is text is written as text.
+    assert Ending.of({:bad_name, "hi"}).reason == ~s({:bad_name, "hi"})
+  end
+
   test "being killed is its own ending" do
     assert %Ending{status: "killed", class: :killed} = ending = Ending.of(:killed)
     assert Ending.words(ending) == "killed"

@@ -155,8 +155,11 @@ defmodule TimelessBeamAcct.Processes do
           named(state, pid, Identity.text(name))
           acc
 
-        {_, :unname, _at, pid, _name}, acc ->
-          named(state, pid, nil)
+        # A process that ends registered is said to have ended, and then
+        # to have given up its name. It is accounted under the name it
+        # ended under, so what comes after its end is not taken in.
+        {_, :unname, _at, pid, _name}, {_births, exits, _remarks} = acc ->
+          unless List.keymember?(exits, pid, 0), do: named(state, pid, nil)
           acc
 
         {_, :call, _at, pid, call}, acc ->

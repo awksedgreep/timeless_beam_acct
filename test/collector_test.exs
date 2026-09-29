@@ -404,6 +404,7 @@ defmodule TimelessBeamAcct.CollectorTest do
       name = start()
       reading(name)
       status = TimelessBeamAcct.status(name)
+      assert status.writer.failed == 0
 
       assert status.options.name == name
       assert status.sweep.processes > 10
@@ -519,6 +520,42 @@ defmodule TimelessBeamAcct.CollectorTest do
       assert said =~ "#{nowhere}  connection refused"
       assert said =~ ~r/^collector +not running$/m
       refute said =~ "told"
+    end
+
+    test "a sink that cannot be made is said to be so, as it was written" do
+      # None of the libraries of the stores in the node is here.
+      checked = TimelessBeamAcct.checked(name: :no_such_collector, sink: :timeless)
+
+      assert [{"sink", said}] = Enum.filter(checked, fn {what, _} -> what =~ "sink" end)
+      assert said =~ "cannot be made: metrics: TimelessMetrics is not loaded"
+      # What a person is told to copy can be copied.
+      assert said =~ ~s({:timeless_metrics, "~> 6.6"})
+      refute said =~ "\\"
+    end
+
+    test "the sink is said once, though it is failing" do
+      name = start(sink: {:forward, to: :no_such_process_is_registered})
+      capture_log(fn -> :ok = TimelessBeamAcct.tick(name) end)
+      TimelessBeamAcct.flush(name)
+
+      checked = TimelessBeamAcct.checked(name: name)
+      assert [{"sink", _}] = Enum.filter(checked, fn {what, _} -> what == "sink" end)
+      assert {"written", written} = List.keyfind(checked, "written", 0)
+      assert written =~ ~r/\A0 ticks, \d+ failed; failing now: /
+    end
+
+    @tag skip: if(Tracer.available?(), do: false, else: "this VM has no trace sessions")
+    test "a server that ends registered has a record with its name" do
+      name = start()
+      reading(name)
+      registered = :"collector_named_#{System.unique_integer([:positive])}"
+      {:ok, agent} = Agent.start(fn -> 1 end, name: registered)
+      Agent.stop(agent)
+
+      record = name |> reading_with(agent) |> record_of(agent)
+      assert record.fields["name"] == Atom.to_string(registered)
+      assert record.fields["service"] == "collector_named"
+      assert record.message =~ ~r/\A#{registered}<0\.\d+\.\d+> exited normal/
     end
 
     test "check says what the node lets a collector see" do
@@ -646,6 +683,8 @@ defmodule TimelessBeamAcct.CollectorTest do
       status = TimelessBeamAcct.status(name)
       assert status.writer.failing
       assert status.writer.failed >= 2
+      # What the sink did not take was not written.
+      assert status.writer.written == 0
       assert TimelessBeamAcct.running?(name)
     end
   end

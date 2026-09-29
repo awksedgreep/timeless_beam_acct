@@ -306,7 +306,7 @@ defmodule TimelessBeamAcct do
        "#{:erlang.system_info(:process_count)} of #{:erlang.system_info(:process_limit)}"},
       {"collector", collector(status)},
       {"", ""}
-      | sink(options, status)
+      | sink(options, if(opts == [], do: status))
     ]
   end
 
@@ -467,6 +467,8 @@ defmodule TimelessBeamAcct do
     ArgumentError -> false
   end
 
+  # Of the sink that is running, unless another was asked about. `status`
+  # is that of the collector whose sink it is, or `nil`.
   defp sink(%Options{sink: {module, opts}}, status) do
     running =
       case status do
@@ -487,10 +489,18 @@ defmodule TimelessBeamAcct do
         described = if running == [], do: [{"sink", module.describe(sink)}], else: running
         described ++ reached(module, sink)
 
+      {:error, reason} when running == [] ->
+        [{"sink", "cannot be made: #{said(reason)}"}]
+
+      # The one that is running was made. One like it could not be made
+      # now: what it writes to has gone since.
       {:error, reason} ->
-        running ++ [{"sink", "cannot be made: #{inspect(reason)}"}]
+        running ++ [{"made again", "it could not be: #{said(reason)}"}]
     end
   end
+
+  defp said(reason) when is_binary(reason), do: reason
+  defp said(reason), do: inspect(reason, limit: 10)
 
   defp reached(module, sink) do
     if function_exported?(module, :check, 1) do

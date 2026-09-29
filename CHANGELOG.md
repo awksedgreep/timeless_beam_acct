@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- A process that ends registered is recorded under the name it ended
+  under. The VM says that a process ended and then that it gave up its
+  name, and the name was taken from it before its end was accounted.
+  (#3)
+- A list in an exit reason is written as a list. The arguments of a
+  call, `[110]`, were written as the text `~c"n"`. (#4)
+- `written`, of the writer, is of the ticks the sink took. It counted
+  those that failed as well. (#5)
+- `check` says the sink once, and says why one cannot be made as it was
+  written, without the backslashes of a string written out. (#6)
+- A label that is not text is made text, as a record's fields are. One
+  such name cost a tick all of its samples in the stores in the node.
+  (#7)
+- OTP 26 is the oldest VM a collector is said to run on. OTP 25 could
+  not be run here, and was in the README without having been. What a
+  collector does on a VM that cannot be asked for one key of a
+  dictionary is tested on one that can. (#9)
+
 ## 0.1.0
 
 The first version.

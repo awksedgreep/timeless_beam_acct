@@ -352,6 +352,47 @@ defmodule TimelessBeamAcct.ProcessesTest do
       assert was_child.parent_group == "the_parent"
     end
 
+    test "that ended registered is recorded under the name it ended under" do
+      state = new()
+      pid = worker()
+      now = :erlang.monotonic_time()
+
+      # As the VM says it: that it ended, and then that it gave up its name.
+      {state, exits, []} =
+        Processes.heard(state, [
+          born(pid, self(), now),
+          {0, :name, now + 1, pid, :the_front_desk},
+          {0, :exit, now + 2, pid, Ending.of(:shutdown)},
+          {0, :unname, now + 3, pid, :the_front_desk}
+        ])
+
+      stop(pid)
+      {_state, [ended], _room, 0} = Processes.ended(state, exits)
+
+      assert ended.name == "the_front_desk"
+      assert ended.group == "the_front_desk"
+    end
+
+    test "that gave up its name before it ended is recorded without it" do
+      state = new()
+      pid = worker()
+      now = :erlang.monotonic_time()
+
+      {state, exits, []} =
+        Processes.heard(state, [
+          born(pid, self(), now),
+          {0, :name, now + 1, pid, :the_front_desk},
+          {0, :unname, now + 2, pid, :the_front_desk},
+          {0, :exit, now + 3, pid, Ending.of(:shutdown)}
+        ])
+
+      stop(pid)
+      {_state, [ended], _room, 0} = Processes.ended(state, exits)
+
+      assert ended.name == nil
+      assert ended.group == @group
+    end
+
     test "that no sweep saw has no figures" do
       state = new()
       pid = worker()

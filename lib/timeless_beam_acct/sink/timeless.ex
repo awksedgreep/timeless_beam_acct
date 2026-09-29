@@ -406,7 +406,7 @@ defmodule TimelessBeamAcct.Sink.Timeless do
 
   defp labels(host, node, labels) do
     labels
-    |> Map.new(fn {key, value} -> {to_string(key), to_string(value)} end)
+    |> Map.new(fn {key, value} -> {to_string(key), Encode.printable(to_string(value))} end)
     |> Map.merge(%{"host" => host, "node" => node})
   end
 

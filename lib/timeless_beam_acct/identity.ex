@@ -178,21 +178,32 @@ defmodule TimelessBeamAcct.Identity do
   defp info(pid, items) do
     :erlang.process_info(pid, items) |> listed()
   rescue
-    ArgumentError ->
-      {keys, plain} = Enum.split_with(items, &match?({:dictionary, _}, &1))
-
-      case safely(fn -> :erlang.process_info(pid, [:dictionary | plain -- [:parent]]) end) do
-        nil ->
-          nil
-
-        info ->
-          dictionary = info[:dictionary] || []
-
-          for {:dictionary, key} <- keys, reduce: Map.new(info) do
-            acc -> Map.put(acc, {:dictionary, key}, Keyword.get(dictionary, key, :undefined))
-          end
-      end
+    ArgumentError -> from_whole_dictionary(pid, items)
   end
+
+  @doc false
+  # What `info/2` answers on a VM that cannot be asked for one key. It is
+  # its own function so that it can be tried on a VM that can.
+  @spec from_whole_dictionary(pid(), list()) :: map() | nil
+  def from_whole_dictionary(pid, items) do
+    {keys, plain} = Enum.split_with(items, &match?({:dictionary, _}, &1))
+
+    case safely(fn -> :erlang.process_info(pid, [:dictionary | plain]) end) do
+      nil ->
+        nil
+
+      info ->
+        dictionary = info[:dictionary] || []
+
+        for {:dictionary, key} <- keys, reduce: Map.delete(info, :dictionary) do
+          acc -> Map.put(acc, {:dictionary, key}, Keyword.get(dictionary, key, :undefined))
+        end
+    end
+  end
+
+  @doc false
+  @spec items() :: list()
+  def items, do: @items
 
   defp listed(:undefined), do: nil
   defp listed(info), do: Map.new(info)

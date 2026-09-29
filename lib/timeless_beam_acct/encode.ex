@@ -58,7 +58,12 @@ defmodule TimelessBeamAcct.Encode do
   defp labels([]), do: []
   defp labels([{key, value} | rest]), do: [?,, key, ~s(="), escape(value), ?" | labels(rest)]
 
+  # A name that is not text is made text first, as a record's fields are.
+  # One such name would otherwise cost a tick all of its samples, where
+  # what is sent to refuses what is not text.
   defp escape(value) when is_binary(value) do
+    value = printable(value)
+
     case :binary.match(value, ["\\", "\"", "\n"]) do
       :nomatch ->
         value

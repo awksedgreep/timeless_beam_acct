@@ -200,6 +200,27 @@ defmodule TimelessBeamAcct.IdentityTest do
       end
     end
 
+    test "asked for its whole dictionary, a process says what it says when asked for one key" do
+      # A VM older than OTP 26.2 cannot be asked for one key.
+      name = :"identity_whole_#{System.unique_integer([:positive])}"
+      {:ok, server} = GenServer.start_link(Server, :arg, name: name)
+      task = Task.async(fn -> receive(do: (:stop -> :ok)) end)
+      wait_until(fn -> Identity.read(task.pid).caller != nil end)
+
+      for pid <- [server, task.pid, self(), Process.whereis(:code_server)] do
+        by_key = pid |> :erlang.process_info(Identity.items()) |> Map.new()
+        assert Identity.from_whole_dictionary(pid, Identity.items()) == by_key
+      end
+
+      send(task.pid, :stop)
+      Task.await(task)
+
+      gone = spawn(fn -> :ok end)
+      ref = Process.monitor(gone)
+      assert_receive {:DOWN, ^ref, _, _, _}
+      assert Identity.from_whole_dictionary(gone, Identity.items()) == nil
+    end
+
     test "a process that is gone is nil" do
       pid = spawn(fn -> :ok end)
       ref = Process.monitor(pid)

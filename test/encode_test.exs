@@ -348,4 +348,19 @@ defmodule TimelessBeamAcct.EncodeTest do
              }
     end
   end
+
+  test "a label that is not text is made text, and the line is one a plane can read" do
+    batch =
+      Batch.push(Batch.new(1), "beam_ets_objects", [{"table", <<"cache", 255, 2, "x">>}], 3)
+
+    text = "h" |> Encode.prometheus_text("n", batch) |> IO.iodata_to_binary()
+
+    assert String.valid?(text)
+    assert text =~ ~r/\Abeam_ets_objects\{host="h",node="n",table="cache.+x"\} 3 1000\n\z/u
+
+    # What is text is as it was, escapes and all.
+    batch = Batch.push(Batch.new(1), "m", [{"proc", ~s(a"b\\c<0.1.0>)}], 1)
+    text = "h" |> Encode.prometheus_text("n", batch) |> IO.iodata_to_binary()
+    assert text == ~s(m{host="h",node="n",proc="a\\"b\\\\c<0.1.0>"} 1 1000\n)
+  end
 end

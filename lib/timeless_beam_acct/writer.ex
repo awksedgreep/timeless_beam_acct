@@ -97,10 +97,14 @@ defmodule TimelessBeamAcct.Writer do
   def handle_cast({:write, tick}, state) do
     %{options: options} = state
 
-    {:noreply,
-     state
-     |> attempt("write", fn sink -> state.module.write(sink, options.host, options.node, tick) end)
-     |> Map.update!(:written, &(&1 + 1)), :hibernate}
+    attempted =
+      attempt(state, "write", fn sink ->
+        state.module.write(sink, options.host, options.node, tick)
+      end)
+
+    # Written is what the sink took. What it did not is counted as failed.
+    written = if attempted.failed == state.failed, do: state.written + 1, else: state.written
+    {:noreply, %{attempted | written: written}, :hibernate}
   end
 
   @impl true

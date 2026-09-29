@@ -125,7 +125,10 @@ defmodule TimelessBeamAcct.Ending do
 
   defp raised(reason), do: written(reason)
 
-  defp written(reason), do: reason |> inspect(limit: 8, printable_limit: 120) |> cut()
+  # A list of small integers is written as a list. It is far more often
+  # the arguments of a call than it is text.
+  defp written(reason),
+    do: reason |> inspect(limit: 8, printable_limit: 120, charlists: :as_lists) |> cut()
 
   defp cut(text) do
     if String.length(text) > @reason_length,

@@ -62,9 +62,9 @@ OTP 27, 28 and 29, and on OTP 26 without exit accounting.
 [What is not here yet](#what-is-not-here-yet) is listed at the end, and
 [DESIGN.md](DESIGN.md) explains the decisions.
 
-Elixir 1.18 or later. Exit accounting needs OTP 27 or later, and what the
-VM remarks on needs OTP 28 or later; on an older VM the collector runs
-without them. A collector has no dependencies when it runs. Igniter is an
+Elixir 1.18 or later, on OTP 26 or later. Exit accounting needs OTP 27 or
+later, and what the VM remarks on needs OTP 28 or later; on an older VM
+the collector runs without them. A collector has no dependencies when it runs. Igniter is an
 optional one, for the installer.
 
 ## Quick start
@@ -313,11 +313,12 @@ compacted. The libSQL engines keep it.
 
 ## What the VM lets a collector see
 
-On any VM the collector runs. Each release adds something:
+OTP 26 is the oldest a collector has been run on. Each release after it
+adds something:
 
 | OTP | adds |
 |---|---|
-| 25 | VM statistics; applications; groups; processes that live to a sweep; the parent of each |
+| 26 | VM statistics; applications; groups; processes that live to a sweep; the parent of each |
 | 26.2 | one key of a process's dictionary asked for, and not the whole of it |
 | 27 | trace sessions: word of each process that starts and ends, without taking the tracer from whoever has it |
 | 28 | what the VM remarks on, without taking the system monitor from whoever has it; the processes read one at a time, and not listed first |
