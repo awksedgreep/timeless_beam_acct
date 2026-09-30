@@ -510,6 +510,17 @@ names first. Labels: `proc` (`MyApp.Repo<0.512.0>`), `pid`, `group`, `app`.
 | `beam_proc_memory_bytes` | its heap, its stack, and what is waiting in its queue |
 | `beam_proc_message_queue_len` | messages waiting |
 
+`:max_processes` is how many have series at once, and not how many ever
+have: a process that ends leaves its series behind, and its place goes to
+the next. On a node where jobs of a minute or so come and go, that was 43
+new series a minute, which is ten thousand in an afternoon and a million
+in sixteen days. For finding what is wrong that is nothing. A collector
+that is left running can be told to give series only to what stays
+(`min_age: "5m"`), or to no process (`max_processes: 0`), and has the
+applications and the groups, which are bounded, all the same.
+[DESIGN.md](DESIGN.md#how-many-series-that-is-over-time) has the
+measurements.
+
 ### The collector: `beam_acct_*`
 
 `beam_acct_processes`, `beam_acct_processes_reported`, `beam_acct_groups`,
@@ -779,6 +790,8 @@ that was read: `:observer`, `:recon`, or the application's own count.
 - **What a process had used when it ended.** A record has the figures of
   the last sweep that saw the process. The VM does not say more to a
   tracer that is a process; one that is native code could ask.
+- **A limit to the series of processes, over time.** There is one to how
+  many have series at once.
 - **Reading the stores.** `top`, `exits`, and `trees` read what the
   collector has in memory. A moment last Tuesday is looked at on a canvas.
 - **A page in LiveDashboard.** It is to be a project of its own, and

@@ -106,6 +106,69 @@ The same is done for groups and for tables
 keeps it for a few readings while it is absent, since a pool between two
 jobs has no processes and is the same pool when it has them again.
 
+### How many series that is, over time
+
+`:max_processes` is how many processes have series at once. It is not
+how many ever have. When a process that has series ends, its place goes
+to the next, and its series stay where they were written: `proc` has the
+pid in it, and no process has that pid again. So the series of a node
+are those of the tiers that are bounded, and five more for every process
+that has ever been given a place.
+
+Measured nineteen minutes into a run of `bench/compression.exs`, which is
+a node of some five hundred processes with 25 requests a second:
+
+| | series |
+|---|---:|
+| of processes | 1,580 |
+| of groups | about 1,330 |
+| of tables, applications, the node, and the collector | about 410 |
+
+316 processes had had series and 153 had them then. That is 43 new
+series a minute: ten thousand in an afternoon spent looking for what is
+wrong, sixty thousand in a day, and a million in sixteen days.
+
+The most it could be is two hundred places given up every forty seconds,
+which is two million series a day. Nothing a node does is like that, and
+nothing in the collector prevents it.
+
+**This is left as it is**, because of what a collector is for. It is put
+into a node when something is wrong and taken out when it has been
+found, and over hours the series of processes are a few thousand. The
+planes have been run with a million. What is bounded, the groups and the
+applications and the tables, is what is for a collector that is left
+running.
+
+Two things would bound it, and neither is done. They are written down so
+that they need not be thought of again.
+
+**A process without a name could wait longer than one with.** Nearly all
+of the series that were dead in that run were of two kinds of job that
+take thirty to ninety seconds. They had no name. They were notable for
+doing a hundredth of what the node did, which on a node that is doing
+little is not much to do, and each was given five series, wrote a few
+samples to them, and ended. That is what the tiers are there to avoid: a
+series for a process that was hardly there. A name is what someone will
+look for, and thirty seconds is long enough to wait for one. What has no
+name matters if it stays, and could be made to wait five minutes.
+
+The threshold is a share, and that is what lets a job through on a quiet
+node. An amount would not: so many reductions a second, whatever the
+node is doing.
+
+**New places could be counted by the hour.** So many processes given
+series in an hour and no more, with a figure for those that were turned
+away. What grows without limit would then grow at a rate that is known,
+and the figure would say when the rate was reached.
+
+What can be done without either, by whoever leaves a collector running:
+
+| to | tell it |
+|---|---|
+| give series only to what stays | `min_age: "5m"` |
+| leave out what is notable only for its work | `notable_work: 100` |
+| give series to no process | `max_processes: 0` |
+
 ### A name that has a place is reported at every reading
 
 A reader takes the last sample of a series as its value until a newer
@@ -552,17 +615,21 @@ Ordered by how much each would add.
 2. **A sample that says a series has ended**, for the processes that
    have series. It needs the planes to understand one. Until then a
    reader has to be told the window to ask with.
-3. **Reading the stores.** `top`, `exits`, and `trees` read what the
+3. **A limit to the series of processes, over time.** There is one to
+   how many have series at once, and none to how many ever have. See
+   [how many series that is, over time](#how-many-series-that-is-over-time),
+   which has the two things that would bound it and why neither is done.
+4. **Reading the stores.** `top`, `exits`, and `trees` read what the
    collector has in memory, which is the last few minutes. A moment last
    Tuesday is in the stores, and is looked at on a canvas.
-4. **Memory a process holds outside its heap.** A large binary is held by
+5. **Memory a process holds outside its heap.** A large binary is held by
    reference, and is counted once for the node and not against the
    processes that hold it. Asking a process for its binaries costs a walk
    of its heap, so it would be asked of the processes that have series.
-5. **Ports**: sockets and files, each with what it has read and written,
+6. **Ports**: sockets and files, each with what it has read and written,
    and the process that owns it.
-6. **A smaller table.** A row of the table of processes is 470 bytes,
+7. **A smaller table.** A row of the table of processes is 470 bytes,
    mostly the names a process goes by, written out in every row. They
    could be written once.
-7. **Jobs longer than an hour.** What a job starts after its first hour
+8. **Jobs longer than an hour.** What a job starts after its first hour
    is a trace of its own.
