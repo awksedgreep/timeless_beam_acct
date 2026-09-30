@@ -41,6 +41,37 @@ if Code.ensure_loaded?(Igniter) do
     starts before any of them, and the application would not start at
     all.
 
+    `timeless_phoenix`'s installer puts `{TimelessPhoenix, ...}` first
+    among the children, and this one puts the collector last, so the
+    order is right whichever of the two is run first. It was run so
+    against an application made by `mix phx.new`, with `timeless_phoenix`
+    2.0.3.
+
+    The metrics store written to is `:tp_default_timeless`, which is the
+    one `timeless_phoenix` starts unless it is given a `:name`. An
+    application that gave it one, as `{TimelessPhoenix, name: :obs, ...}`,
+    has the store `:tp_obs_timeless`, and the child is changed by hand to
+    say so:
+
+        {TimelessBeamAcct, sink: {:timeless, metrics: :tp_obs_timeless}}
+
+    Until it is, the application does not start, and the error says
+    which store is running.
+
+    A child of the application is started wherever the application is,
+    its tests among the rest. So `config :timeless_beam_acct, start: false`
+    is added to `test.exs` for this sink as for the others: a collector
+    that is told so by the configuration does not start, though it is
+    among the children.
+
+    ## Igniter
+
+    `mix igniter.install` adds Igniter for as long as it runs and takes it
+    out again. `mix timeless_beam_acct.install`, run by itself, needs
+    Igniter to be among the application's dependencies:
+
+        {:igniter, "~> 0.6", only: [:dev, :test], runtime: false}
+
     ## Why the configuration, and not the supervision tree
 
     A collector asks the VM for word of every process that starts and
@@ -105,6 +136,7 @@ if Code.ensure_loaded?(Igniter) do
             {TimelessBeamAcct, {:code, Sourceror.parse_string!("[sink: :timeless]")}},
             after: fn _child -> true end
           )
+          |> configure("test.exs", :start, false)
           |> Igniter.add_notice(notice(sink))
 
         true ->
@@ -145,8 +177,17 @@ if Code.ensure_loaded?(Igniter) do
     defp how_off("timeless") do
       """
       It is among the children of the application's supervisor, after the
-      stores it writes to, and runs wherever the application does. To turn
-      it off, take it from among them.
+      stores it writes to. It is off while the tests run (config/test.exs).
+      To turn it off anywhere else:
+
+          config :timeless_beam_acct, start: false
+
+      Samples go to the store :tp_default_timeless, which is the one
+      timeless_phoenix starts unless it is given a :name. For
+      {TimelessPhoenix, name: :obs, ...} the store is :tp_obs_timeless,
+      and the child is to be changed to say so:
+
+          {TimelessBeamAcct, sink: {:timeless, metrics: :tp_obs_timeless}}
       """
     end
 

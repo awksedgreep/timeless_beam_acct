@@ -497,6 +497,13 @@ defmodule TimelessBeamAcct.Sink.TimelessTest do
       assert why =~ "name: :acct"
     end
 
+    test "and whose store is not running is told how a store is named to the sink" do
+      FakeStores.tell(:metrics, :running?, false)
+      assert {:error, why} = Timeless.init(@fakes)
+      assert why =~ "sink: {:timeless, metrics: its_name}"
+      assert why =~ "sink: {:timeless, metrics: false}"
+    end
+
     test "and whose store is not running is refused, by the signal, where stores have no name" do
       FakeStores.tell(:traces, :running?, false)
       assert {:error, why} = Timeless.init(@fakes)
@@ -507,6 +514,70 @@ defmodule TimelessBeamAcct.Sink.TimelessTest do
 
     test "and cannot say whether its store is running is taken to be" do
       assert {:ok, _} = Timeless.init(Keyword.merge(@fakes, logs_module: FakeWithoutFlush))
+    end
+  end
+
+  describe "a metrics store of another name" do
+    test "is named in the error, with what to write to be given it" do
+      why = Timeless.no_store(TimelessMetrics, :tp_default_timeless, [:tp_obs_timeless])
+
+      assert why =~ "metrics: no store named :tp_default_timeless is running in this node"
+      assert why =~ "The store that is running is :tp_obs_timeless"
+      assert why =~ "sink: {:timeless, metrics: :tp_obs_timeless}"
+      assert why =~ ":tp_<name>_timeless after the :name it was given"
+    end
+
+    test "is one of those named in the error when several are running" do
+      why = Timeless.no_store(TimelessMetrics, :tp_default_timeless, [:metrics, :tp_obs_timeless])
+
+      assert why =~ "The stores that are running are :metrics, :tp_obs_timeless"
+      assert why =~ "sink: {:timeless, metrics: its_name}"
+    end
+
+    test "is not there to name when the collector comes before the stores" do
+      why = Timeless.no_store(TimelessMetrics, :tp_default_timeless, [])
+
+      assert why =~ "No metrics store was found running"
+      assert why =~ "{TimelessPhoenix, ...}"
+      assert why =~ "comes before {TimelessBeamAcct, ...} among the children"
+
+      assert why =~
+               "Start {TimelessMetrics, name: :tp_default_timeless, data_dir: ...} before the collector"
+    end
+
+    test "is not looked for on behalf of a module put in between" do
+      why = Timeless.no_store(FakeMetrics, :acct, [:tp_obs_timeless])
+
+      refute why =~ "tp_obs_timeless"
+      assert why =~ "metrics: no store named :acct is running in this node"
+    end
+
+    test "is found by its supervisor and by what timeless_metrics notes of a store" do
+      start_supervised!(%{
+        id: :a_store,
+        start: {Supervisor, :start_link, [[], [strategy: :one_for_one, name: :issue8_store_sup]]}
+      })
+
+      start_supervised!(%{
+        id: :not_a_store,
+        start: {Supervisor, :start_link, [[], [strategy: :one_for_one, name: :issue8_other_sup]]}
+      })
+
+      _ = :issue8_other
+      refute :issue8_store in Timeless.stores()
+
+      :persistent_term.put({TimelessMetrics, :issue8_store, :engine}, :libsql)
+      on_exit(fn -> :persistent_term.erase({TimelessMetrics, :issue8_store, :engine}) end)
+
+      assert :issue8_store in Timeless.stores()
+      refute :issue8_other in Timeless.stores()
+    end
+
+    test "is not found once its supervisor has stopped, though what was noted of it remains" do
+      :persistent_term.put({TimelessMetrics, :issue8_stopped, :engine}, :libsql)
+      on_exit(fn -> :persistent_term.erase({TimelessMetrics, :issue8_stopped, :engine}) end)
+
+      refute :issue8_stopped in Timeless.stores()
     end
   end
 
@@ -793,5 +864,66 @@ defmodule TimelessBeamAcct.Sink.TimelessTest do
       refute line =~ "metrics"
       refute line =~ "\n"
     end
+  end
+
+  # The process the stores are called from, of whoever asks.
+  defp helper, do: Process.get({Timeless, :helper})
+
+  test "the stores are called from one process, kept from one tick to the next" do
+    # A process for each call would end at each call, and a collector
+    # accounts for every process that ends: three of its own at every tick.
+    sink = sink()
+    assert helper() == nil
+
+    {:ok, sink} = Timeless.write(sink, @host, @node, tick())
+    kept = helper()
+    assert is_pid(kept)
+    assert Process.info(kept, :initial_call) == {:initial_call, {Timeless, :store_calls, 1}}
+
+    {:ok, sink} = Timeless.write(sink, @host, @node, tick())
+    {:ok, sink} = Timeless.flush(sink)
+    assert helper() == kept
+    assert Process.alive?(kept)
+
+    # It ends with the sink.
+    ref = Process.monitor(kept)
+    :ok = Timeless.close(sink)
+    assert_receive {:DOWN, ^ref, :process, ^kept, :normal}
+  end
+
+  test "the process the stores are called from ends when the one it calls for does" do
+    test = self()
+    state = sink()
+
+    {owner, ref} =
+      spawn_monitor(fn ->
+        # The fakes are found by whose test it is.
+        Process.put(:"$callers", [test])
+        {:ok, _sink} = Timeless.write(state, @host, @node, tick())
+        send(test, {:helper, helper()})
+      end)
+
+    assert_receive {:helper, kept}
+    assert is_pid(kept)
+    assert_receive {:DOWN, ^ref, :process, ^owner, _}
+    kept_ref = Process.monitor(kept)
+    assert_receive {:DOWN, ^kept_ref, :process, ^kept, _}
+  end
+
+  test "a call that ends the process it was made from is a failed write, and the next is made from another" do
+    state = sink()
+    {:ok, state} = Timeless.write(state, @host, @node, tick())
+    first = helper()
+
+    # What a store starts and is linked to ends, and takes the caller with it.
+    FakeStores.tell(:logs, :ingest, :break_link)
+    assert {:error, reason, state} = Timeless.write(state, @host, @node, tick())
+    assert reason =~ "logs"
+    refute Process.alive?(first)
+
+    FakeStores.tell(:logs, :ingest, :ok)
+    assert {:ok, _} = Timeless.write(state, @host, @node, tick())
+    assert helper() != first
+    assert Process.alive?(helper())
   end
 end

@@ -56,7 +56,7 @@ iex> TimelessBeamAcct.trees(failed: true, limit: 1)
 
 ## Status
 
-Version 0.1.0. Collection, the sinks, putting a collector into a running
+Version 0.1.1. Collection, the sinks, putting a collector into a running
 node, and the three views work and are tested against a live VM, on
 OTP 27, 28 and 29, and on OTP 26 without exit accounting.
 [What is not here yet](#what-is-not-here-yet) is listed at the end, and
@@ -83,7 +83,14 @@ while the application's tests run. `--sink` is `http` (the default),
 `timeless`, or `stdout`, and `--metrics-url`, `--logs-url`, and
 `--traces-url` say where the planes are. With `--sink timeless` the
 collector is put among the application's children instead, after the
-stores it writes to.
+stores it writes to, and runs while the tests run as they do:
+[To the stores in the node](#to-the-stores-in-the-node) has what was
+found of that.
+
+`mix igniter.install` brings Igniter for as long as it runs. With the
+package among the dependencies already, `mix timeless_beam_acct.install
+--sink timeless` does the same, and needs Igniter among them too:
+`{:igniter, "~> 0.6", only: [:dev, :test], runtime: false}`.
 
 Or by hand:
 
@@ -301,7 +308,59 @@ children = [
 The stores have to be running when the collector starts, and a collector
 started by `start: true` in the configuration starts before any child of
 the application does. `mix igniter.install --sink timeless` puts it among
-the children.
+the children, last. `timeless_phoenix`'s installer puts
+`{TimelessPhoenix, ...}` first, so the order is right whichever is
+installed first. If the collector comes before the stores the
+application does not start, and the error says that no store was found
+running.
+
+The metrics store has a name, and the one written to unless another is
+named is `:tp_default_timeless`. That is the store of `timeless_phoenix`
+as its installer leaves it: it names its store `:tp_<name>_timeless`
+after the `:name` it is given, and `:default` is the name it has when it
+is given none. An application that gave it one says so to the collector:
+
+```elixir
+children = [
+  {TimelessPhoenix, name: :obs, data_dir: "priv/observability"},
+  {TimelessBeamAcct, sink: {:timeless, metrics: :tp_obs_timeless}}
+]
+```
+
+Without that the application does not start, and the error names the
+store that is running and says what to write:
+
+```text
+metrics: no store named :tp_default_timeless is running in this node. The
+store that is running is :tp_obs_timeless: it is written to with sink:
+{:timeless, metrics: :tp_obs_timeless}. ...
+```
+
+The logs and traces stores are one to a node and have no name.
+
+A child of the application is started wherever the application is, its
+tests among the rest. A collector that the configuration says is not to
+start does not, though it is among the children:
+
+```elixir
+# config/test.exs
+config :timeless_beam_acct, start: false
+```
+
+The installer writes that. Without it a collector runs with the tests,
+as the stores do: it reads every ten seconds, so a suite that is over
+sooner leaves nothing, and a longer one leaves a record and a span for
+each process that ended in it, up to `:max_records` a reading.
+
+The stores are called from a process that is not the writer, so that
+what happens to a call does not happen to the collector. It is one
+process, kept from one reading to the next, and is accounted in the
+group `TimelessBeamAcct.Sink.Timeless.store_calls`.
+
+This was run with `timeless_phoenix` 2.0.3 in an application made by
+`mix phx.new` 1.8.15: both installers, a collector writing to the three
+stores and read back from them, the application's tests, and the pages
+`timeless_phoenix` adds to LiveDashboard.
 
 There is nothing kept for a store that is not running: it is in the same
 node, and what it would come back to is gone with it. What could not be

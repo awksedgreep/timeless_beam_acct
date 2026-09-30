@@ -83,11 +83,79 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
     # It is not started from the configuration as well: it would be
     # started before the stores are, and the application would not start.
     assert configured(igniter, "config/config.exs") == []
-    assert content(igniter, "config/test.exs") == nil
+    # And it is kept from starting with the tests, child though it is.
+    assert configured(igniter, "config/test.exs") == [start: false]
 
     assert [notice] = igniter.notices
     assert notice =~ "stores in the node"
     assert notice =~ "among the children"
+  end
+
+  test "for the stores in the node, the collector comes after timeless_phoenix's, which is put first" do
+    application = """
+    defmodule Demo.Application do
+      use Application
+
+      def start(_type, _args) do
+        children = [
+          {TimelessPhoenix, [data_dir: "priv/observability"]},
+          DemoWeb.Telemetry,
+          {Phoenix.PubSub, name: Demo.PubSub},
+          # Start to serve requests, typically the last entry
+          DemoWeb.Endpoint
+        ]
+
+        Supervisor.start_link(children, strategy: :one_for_one, name: Demo.Supervisor)
+      end
+    end
+    """
+
+    igniter =
+      install(
+        ~w(--sink timeless),
+        files("import Config\n", %{"lib/demo/application.ex" => application})
+      )
+
+    assert igniter.issues == []
+    written = content(igniter, "lib/demo/application.ex")
+
+    assert written =~
+             ~r/\{TimelessPhoenix, .*DemoWeb\.Endpoint,\s*\{TimelessBeamAcct, \[?sink: :timeless\]?\}\s*\]/s
+  end
+
+  test "for the stores in the node, a collector that is among the children is left as it is" do
+    application = """
+    defmodule Demo.Application do
+      use Application
+
+      def start(_type, _args) do
+        children = [
+          {TimelessPhoenix, [data_dir: "priv/observability", name: :obs]},
+          {TimelessBeamAcct, sink: {:timeless, metrics: :tp_obs_timeless}}
+        ]
+
+        Supervisor.start_link(children, strategy: :one_for_one, name: Demo.Supervisor)
+      end
+    end
+    """
+
+    igniter =
+      install(
+        ~w(--sink timeless),
+        files("import Config\n", %{"lib/demo/application.ex" => application})
+      )
+
+    assert igniter.issues == []
+    assert content(igniter, "lib/demo/application.ex") == application
+  end
+
+  test "for the stores in the node, it says which store, and what to write for another" do
+    igniter = install(~w(--sink timeless))
+
+    assert [notice] = igniter.notices
+    assert notice =~ ":tp_default_timeless"
+    assert notice =~ "{TimelessBeamAcct, sink: {:timeless, metrics: :tp_obs_timeless}}"
+    assert String.replace(notice, ~r/\s+/, " ") =~ "It is off while the tests run"
   end
 
   test "the planes are where they are said to be" do

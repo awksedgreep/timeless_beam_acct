@@ -75,4 +75,36 @@ defmodule TimelessBeamAcct.ApplicationTest do
     refute TimelessBeamAcct.running?()
     assert Supervisor.which_children(TimelessBeamAcct.Application.Supervisor) == []
   end
+
+  test "a collector among the children of a supervisor does not start where the configuration says not to" do
+    Application.put_env(:timeless_beam_acct, :start, false)
+    {:ok, _} = Application.ensure_all_started(:timeless_beam_acct)
+
+    name = :application_test_child
+    child = {TimelessBeamAcct, name: name, sink: {:forward, to: self()}, interval: 3600}
+
+    # As in the tests of an application that has one among its children.
+    {:ok, supervisor} = Supervisor.start_link([child], strategy: :one_for_one)
+
+    assert Supervisor.which_children(supervisor) == [
+             {name, :undefined, :supervisor, [TimelessBeamAcct]}
+           ]
+
+    refute TimelessBeamAcct.running?(name)
+    Supervisor.stop(supervisor)
+
+    # Where the configuration says nothing, it starts.
+    Application.delete_env(:timeless_beam_acct, :start)
+    {:ok, supervisor} = Supervisor.start_link([child], strategy: :one_for_one)
+    assert TimelessBeamAcct.running?(name)
+    Supervisor.stop(supervisor)
+  end
+
+  test "an option that is wrong is refused, whether or not a collector is to start" do
+    Application.put_env(:timeless_beam_acct, :start, false)
+
+    assert_raise ArgumentError, ~r/unknown option/, fn ->
+      TimelessBeamAcct.start_link(intervl: 5)
+    end
+  end
 end

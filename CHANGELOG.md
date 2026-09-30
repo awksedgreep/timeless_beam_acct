@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
+
+What those who tried 0.1.0 first would have met, and what was found by
+running it where it had not been run.
 
 - A process that ends registered is recorded under the name it ended
   under. The VM says that a process ended and then that it gave up its
@@ -19,6 +22,19 @@
   not be run here, and was in the README without having been. What a
   collector does on a VM that cannot be asked for one key of a
   dictionary is tested on one that can. (#9)
+- `mix igniter.install --sink timeless` was run against an application
+  made by `mix phx.new` with `timeless_phoenix` 2.0.3: it starts, and
+  what the collector records is read back from the three stores. (#8)
+- Where the metrics store has another name than the one written to, the
+  error names the store that is running and says what to write.
+- With the stores in the node, the stores are called from one process
+  that is kept, and not from one for each call. A collector accounts
+  for every process that ends, and recorded three of its own at every
+  tick.
+- A collector among the children of a supervisor does not start where
+  the configuration says `start: false`, and the installer says so in
+  `test.exs` for every sink. With the stores in the node a collector is
+  a child, and ran with the application's tests.
 - `docs/RELEASING.md`, which is what is run before a version is tagged,
   and `scripts/matrix.sh`, which runs the suite on each OTP that is
   named.

@@ -90,10 +90,21 @@ defmodule TimelessBeamAcct do
 
   Raises `ArgumentError` for an option that is wrong, and returns
   `{:error, reason}` for a sink that cannot be made.
+
+  Returns `:ignore`, and starts nothing, where the configuration says
+  `config :timeless_beam_acct, start: false`. That is how a collector that
+  is among the children of a supervisor is kept from running with the
+  application's tests: it is a child wherever the application is
+  started, and the configuration is what differs from one environment to
+  the next.
   """
-  @spec start_link(keyword() | Options.t()) :: Supervisor.on_start()
+  @spec start_link(keyword() | Options.t()) :: Supervisor.on_start() | :ignore
   def start_link(opts \\ []) do
-    opts |> Options.new!() |> TimelessBeamAcct.Supervisor.start_link()
+    options = Options.new!(opts)
+
+    if Application.get_env(:timeless_beam_acct, :start) == false,
+      do: :ignore,
+      else: TimelessBeamAcct.Supervisor.start_link(options)
   end
 
   @doc """

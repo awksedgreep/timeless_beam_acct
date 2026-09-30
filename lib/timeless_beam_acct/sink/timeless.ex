@@ -29,9 +29,19 @@ defmodule TimelessBeamAcct.Sink.Timeless do
   `:tp_<name>_timeless`, and its `<name>` is `:default` unless it is given
   another, so `:tp_default_timeless` is the store of an application that
   added `{TimelessPhoenix, data_dir: ...}` to its supervision tree and
-  nothing else. A store started as `{TimelessMetrics, name: :metrics, ...}`
-  is given as `metrics: :metrics`. The logs and traces stores are one to a
-  node and have no name.
+  nothing else, which is what its installer adds. An application that
+  added `{TimelessPhoenix, name: :obs, data_dir: ...}` has the store
+  `:tp_obs_timeless`, and says so to the collector:
+
+      {TimelessBeamAcct, sink: {:timeless, metrics: :tp_obs_timeless}}
+
+  A store started as `{TimelessMetrics, name: :metrics, ...}` is given as
+  `metrics: :metrics`. The logs and traces stores are one to a node and
+  have no name.
+
+  This was run against an application made by `mix phx.new` that had
+  `timeless_phoenix` 2.0.3 put into it by its installer, and the name of
+  the store in that node was `:tp_default_timeless`.
 
   ## What is checked when the sink starts
 
@@ -41,6 +51,13 @@ defmodule TimelessBeamAcct.Sink.Timeless do
   and traces stores are running if the process of either of their engines
   is. What cannot be reached is an error that says what is missing and what
   to do about it. A signal that is off is not checked and not written.
+
+  Where no metrics store of the name is running, the error names the
+  stores that are, and says what to write to be given one of them. A
+  store is taken to be one if its supervisor is running and
+  `timeless_metrics` has noted its engine, which it does when a store
+  starts. If none is found the error says that a store has to be started
+  before the collector is.
 
   ## What is handed to the stores
 
@@ -161,6 +178,10 @@ defmodule TimelessBeamAcct.Sink.Timeless do
   """
 
   @behaviour TimelessBeamAcct.Sink
+
+  # Where the process that makes the calls is kept, by the one it makes
+  # them for.
+  @helper {__MODULE__, :helper}
 
   alias TimelessBeamAcct.{Batch, Clock, Encode, Event, Span, Tick}
 
@@ -312,6 +333,12 @@ defmodule TimelessBeamAcct.Sink.Timeless do
   @spec close(t()) :: :ok
   def close(%__MODULE__{} = state) do
     _ = flush(state)
+
+    case Process.delete(@helper) do
+      pid when is_pid(pid) -> send(pid, :stop)
+      nil -> :ok
+    end
+
     :ok
   end
 
@@ -614,12 +641,7 @@ defmodule TimelessBeamAcct.Sink.Timeless do
     _, _ -> false
   end
 
-  defp stopped(:metrics, module, %{metrics: store}) do
-    "metrics: no store named #{inspect(store)} is running in this node. Start " <>
-      "{#{inspect(module)}, name: #{inspect(store)}, data_dir: ...} before the collector, " <>
-      "name the store that is running with metrics: its_name, or turn the signal off with " <>
-      "metrics: false"
-  end
+  defp stopped(:metrics, module, %{metrics: store}), do: no_store(module, store, stores())
 
   defp stopped(signal, module, _state) do
     %{app: app} = @libraries[signal]
@@ -628,6 +650,77 @@ defmodule TimelessBeamAcct.Sink.Timeless do
       "#{inspect(app)} application before the collector, and see that it is not configured " <>
       "with owner: :external, which starts it without a store; or turn the signal off with " <>
       "#{signal}: false"
+  end
+
+  @doc """
+  What is said when no metrics store of the name is running, of the
+  stores that are.
+
+  One who left the name out was given `timeless_phoenix`'s, and one whose
+  `timeless_phoenix` was given a `:name` has a store of another name. The
+  error says which, and what to write.
+  """
+  @spec no_store(module(), atom(), [atom()]) :: String.t()
+  def no_store(module, store, stores) when is_atom(store) and is_list(stores) do
+    "metrics: no store named #{inspect(store)} is running in this node. " <>
+      found(module, stores) <>
+      "Start {#{inspect(module)}, name: #{inspect(store)}, data_dir: ...} before the " <>
+      "collector, name the store that is running with sink: {:timeless, metrics: its_name}, " <>
+      "or turn the signal off with sink: {:timeless, metrics: false}"
+  end
+
+  # A module put in between has stores of its own, which are not looked
+  # for.
+  defp found(module, _stores) when module != TimelessMetrics, do: ""
+
+  defp found(_module, []) do
+    "No metrics store was found running: a store has to be started before the collector " <>
+      "is, so {TimelessPhoenix, ...}, or whatever starts the store, comes before " <>
+      "{TimelessBeamAcct, ...} among the children of the application. "
+  end
+
+  defp found(_module, [store]) do
+    "The store that is running is #{inspect(store)}: it is written to with " <>
+      "sink: {:timeless, metrics: #{inspect(store)}}. #{named()}"
+  end
+
+  defp found(_module, stores) do
+    "The stores that are running are #{Enum.map_join(stores, ", ", &inspect/1)}: one is " <>
+      "written to with sink: {:timeless, metrics: its_name}. #{named()}"
+  end
+
+  defp named do
+    "timeless_phoenix names its store :tp_<name>_timeless after the :name it was given, " <>
+      "and #{inspect(@default_store)} when it was given none. "
+  end
+
+  @doc """
+  The metrics stores running in this node, by name.
+
+  A store named `name` has a supervisor registered as `:<name>_sup`, and
+  `timeless_metrics` notes the engine of each store it starts. Both are
+  asked for, so that a supervisor of something else is not taken for a
+  store.
+  """
+  @spec stores() :: [atom()]
+  def stores do
+    for registered <- Process.registered(),
+        text = Atom.to_string(registered),
+        String.ends_with?(text, "_sup"),
+        store = existing(String.replace_suffix(text, "_sup", "")),
+        store != nil,
+        :persistent_term.get({TimelessMetrics, store, :engine}, nil) != nil,
+        alive?(registered) do
+      store
+    end
+    |> Enum.sort()
+  end
+
+  # A store that is running was named by an atom, which therefore exists.
+  defp existing(text) do
+    String.to_existing_atom(text)
+  rescue
+    ArgumentError -> nil
   end
 
   defp flushed(state, signal, module, arity) do
@@ -660,29 +753,32 @@ defmodule TimelessBeamAcct.Sink.Timeless do
     )
   end
 
-  # The call is made from a process of its own: whatever happens to it
-  # there, the writer hears of it and goes on.
+  # The call is made from a process that is not the writer: whatever
+  # happens to it there, the writer hears of it and goes on.
+  #
+  # It is one process, kept from one call to the next, and not one for
+  # each call. A process for each call ends at each call, and a collector
+  # accounts for every process that ends: it would record three of its own
+  # at every tick, for as long as it ran.
   defp isolated(call, timeout) do
-    parent = self()
+    helper = helper()
+    monitor = Process.monitor(helper)
     tag = make_ref()
-    callers = [parent | Process.get(:"$callers", [])]
-
-    {pid, monitor} =
-      spawn_monitor(fn ->
-        Process.put(:"$callers", callers)
-        send(parent, {tag, attempt(call)})
-      end)
+    callers = [self() | Process.get(:"$callers", [])]
+    send(helper, {:call, self(), tag, callers, call})
 
     receive do
       {^tag, answer} ->
         Process.demonitor(monitor, [:flush])
         answer
 
-      {:DOWN, ^monitor, :process, ^pid, reason} ->
+      {:DOWN, ^monitor, :process, ^helper, reason} ->
+        Process.delete(@helper)
         {:error, "exited: #{exit_text(reason)}"}
     after
       timeout ->
-        Process.exit(pid, :kill)
+        Process.exit(helper, :kill)
+        Process.delete(@helper)
         Process.demonitor(monitor, [:flush])
 
         receive do
@@ -692,6 +788,46 @@ defmodule TimelessBeamAcct.Sink.Timeless do
         end
 
         {:error, "no answer in #{timeout / 1000} s"}
+    end
+  end
+
+  # The one that is there, or another if it has ended. It ends when the
+  # process it makes calls for does.
+  defp helper do
+    case Process.get(@helper) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid), do: pid, else: new_helper()
+
+      nil ->
+        new_helper()
+    end
+  end
+
+  defp new_helper do
+    # Started by its name, which is then what it is accounted under.
+    pid = spawn(__MODULE__, :store_calls, [self()])
+    Process.put(@helper, pid)
+    pid
+  end
+
+  @doc false
+  @spec store_calls(pid()) :: :ok
+  def store_calls(owner), do: calls(owner, Process.monitor(owner))
+
+  defp calls(owner, monitor) do
+    receive do
+      {:call, ^owner, tag, callers, call} ->
+        Process.put(:"$callers", callers)
+        send(owner, {tag, attempt(call)})
+        # What it was handed to store is not kept until the next tick.
+        :erlang.garbage_collect()
+        calls(owner, monitor)
+
+      :stop ->
+        :ok
+
+      {:DOWN, ^monitor, :process, ^owner, _reason} ->
+        :ok
     end
   end
 
