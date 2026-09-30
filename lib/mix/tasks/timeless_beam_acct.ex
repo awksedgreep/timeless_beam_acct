@@ -6,7 +6,8 @@ defmodule Mix.Tasks.TimelessBeamAcct do
 
   A collector is one of the processes of the node it accounts for. These
   tasks reach a node from a terminal: they put a collector into it, look
-  at what the collector has, and take the collector out.
+  at what the collector has, watch the node as `timeless-acct watch`
+  watches a host, and take the collector out.
 
   To have an application start a collector of its own, see
   `mix timeless_beam_acct.install`.
@@ -16,6 +17,7 @@ defmodule Mix.Tasks.TimelessBeamAcct do
       mix timeless_beam_acct.top app@ohm --cookie secret
       mix timeless_beam_acct.exits app@ohm --cookie secret --since -15m --failed
       mix timeless_beam_acct.trees app@ohm --cookie secret --failed
+      mix timeless_beam_acct.watch app@ohm --cookie secret
       mix timeless_beam_acct.detach app@ohm --cookie secret
 
   ## Reaching the node

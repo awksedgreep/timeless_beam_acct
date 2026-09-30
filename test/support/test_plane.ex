@@ -20,6 +20,13 @@ defmodule TimelessBeamAcct.TestPlane do
   | `:hang` | nothing: the request is read and never answered |
   | `{:drip, ms}` | the answer a few bytes at a time, `ms` apart |
 
+  ## What it answers
+
+  The same to everything, unless it is given a function: `answer/2`, or
+  the `:answer` option. The function is given each request, and returns
+  the status and the body to answer it with. That is a plane that is
+  asked questions, where the others are planes that are written to.
+
   ## Going down
 
   `stop_listening/1` closes the listening socket, so a connection is
@@ -81,6 +88,10 @@ defmodule TimelessBeamAcct.TestPlane do
   def respond_with(plane, status, body),
     do: GenServer.call(plane, {:respond_with, status, IO.iodata_to_binary(body)})
 
+  @doc "Answer each request with what this returns for it, from now on."
+  @spec answer(GenServer.server(), (request() -> {pos_integer(), iodata()})) :: :ok
+  def answer(plane, fun) when is_function(fun, 1), do: GenServer.call(plane, {:answer, fun})
+
   @doc "Answer in this way from now on."
   @spec mode(GenServer.server(), mode()) :: :ok
   def mode(plane, mode), do: GenServer.call(plane, {:mode, mode})
@@ -112,6 +123,7 @@ defmodule TimelessBeamAcct.TestPlane do
       requests: [],
       status: Keyword.get(opts, :status, 200),
       body: opts |> Keyword.get(:body, "") |> IO.iodata_to_binary(),
+      answer: Keyword.get(opts, :answer),
       mode: Keyword.get(opts, :mode, :content_length)
     }
 
@@ -129,6 +141,8 @@ defmodule TimelessBeamAcct.TestPlane do
   def handle_call({:respond_with, status, body}, _from, state),
     do: {:reply, :ok, %{state | status: status, body: body}}
 
+  def handle_call({:answer, fun}, _from, state), do: {:reply, :ok, %{state | answer: fun}}
+
   def handle_call({:mode, mode}, _from, state), do: {:reply, :ok, %{state | mode: mode}}
 
   def handle_call(:stop_listening, _from, state), do: {:reply, :ok, shut(state)}
@@ -145,8 +159,17 @@ defmodule TimelessBeamAcct.TestPlane do
   # A connection has been read. It is recorded before it is answered, so
   # whoever has the answer can ask for the request.
   def handle_call({:arrived, request}, _from, state) do
-    {:reply, {state.status, state.body, state.mode},
-     %{state | requests: [request | state.requests]}}
+    {status, body} =
+      case state.answer do
+        nil ->
+          {state.status, state.body}
+
+        answer ->
+          {status, body} = answer.(request)
+          {status, IO.iodata_to_binary(body)}
+      end
+
+    {:reply, {status, body, state.mode}, %{state | requests: [request | state.requests]}}
   end
 
   @impl true

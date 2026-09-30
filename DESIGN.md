@@ -642,6 +642,82 @@ and stamped with that time. Two nodes sample at the same moments, a node
 samples at the moments its host does, and a graph bucket never splits an
 interval. Rates use the monotonic clock for the length of the interval.
 
+## Watching it in a terminal
+
+`mix timeless_beam_acct.watch` is `timeless-acct watch`, of a node: the
+same screen, the same keys, and the same two places a moment is read
+from. What was decided is what could not be the same.
+
+### It is written in Elixir
+
+The one it is like is written in Rust, and reads a store that is a file
+beside it. This one cannot: a node's collector has no store of its own.
+What it writes is in the planes, which are asked over HTTP, and a moment
+is as long in coming as the planes take to answer, whatever asks. One
+question to the metrics plane has every series of a node at a moment:
+four hundred kilobytes, in forty-five milliseconds, from a store of ten
+thousand series. Decoding it is three more.
+
+And now is in the node, which is asked as nodes are asked. A program in
+Rust would have had to read now from the planes too, ten seconds late
+and of two hundred processes.
+
+### Now is what the collector read
+
+`timeless-acct watch` reads the kernel itself, every two seconds, with
+the collectors the store is filled by. A terminal cannot do that to a
+node: the reading is of the node's own tables, by a process in the node.
+There is one already, and it keeps its last reading
+(`TimelessBeamAcct.reading/1`): the samples the sink was last given, a
+metric at a time, each with when it was read. They are the figures the
+store has of every other moment, under the same names, so one piece of
+code makes a screen of either.
+
+That is six hundred kilobytes, of a node of five hundred processes and
+a hundred and fifty groups, kept by a collector that keeps four and a
+half megabytes of records. A collector told `history: 0` keeps none of
+it.
+
+So now is as old as the collector's interval, and watching a node reads
+nothing of it that was not being read. What it costs is the answer. A
+node is asked whether its collector has read again, which is an answer
+of two kilobytes, and only then for the reading, which is two hundred;
+and for three hundred of its processes by each of three figures, and
+those of a group when a group is gone into, since a node may have a
+hundred thousand and a screen has forty rows.
+
+### A moment is every process the store has, which is not every process
+
+Now has every process the collector has. Another moment has those that
+had series of their own, which is `:max_processes` at most: the rest
+were never written down one at a time, and are in their groups. Going
+into a group at 03:12 last Tuesday shows the processes of it that were
+named or large.
+
+### The jobs are found among the last spans
+
+The planes give spans a hundred at a time, and do not say which are of
+traces of more than one. The last six hundred are read, the traces among
+them that have two or more are jobs, and each of the first thirty is
+read in full, since its root may have been the six hundred and first.
+A job that started and ended between two other jobs' worth of spans ago
+is found with `/`, which is not yet said to the planes: it is looked for
+in what was read.
+
+### Nothing but the VM and stty
+
+A terminal is taken so that a key is read as it is pressed. From OTP 28
+the VM does that when asked (`shell:start_interactive({noshell, raw})`).
+Before that the terminal is told to, with `stty raw`, which is a program
+of every system a node runs on; the VM reads what it is given. Either
+way `stty -isig` is said as well, or control and C would be the VM's
+break and not a key.
+
+The screen is drawn on a canvas in memory and the rows that changed are
+sent. That, the keys, and the tables are a few hundred lines, and having
+them here is what lets `mix timeless_beam_acct.watch` be run in an
+application that was given this one dependency and no other.
+
 ## What is not here yet
 
 Ordered by how much each would add.
@@ -657,9 +733,13 @@ Ordered by how much each would add.
    how many have series at once, and none to how many ever have. See
    [how many series that is, over time](#how-many-series-that-is-over-time),
    which has the two things that would bound it and why neither is done.
-4. **Reading the stores.** `top`, `exits`, and `trees` read what the
-   collector has in memory, which is the last few minutes. A moment last
-   Tuesday is in the stores, and is looked at on a canvas.
+4. **Reading the stores in the node.** `watch` reads the planes, and a
+   moment last Tuesday is there. What a collector with the `:timeless`
+   sink writes to the stores of its own node is not read by it, and
+   would be by a third thing that is a store to it, asked of the node.
+   With it, in the same place: the jobs that are running, which
+   `timeless-acct watch` has first among the jobs, and a view of what the
+   VM remarked on.
 5. **Memory a process holds outside its heap.** A large binary is held by
    reference, and is counted once for the node and not against the
    processes that hold it. Asking a process for its binaries costs a walk

@@ -1,7 +1,7 @@
 defmodule TimelessBeamAcct.HistoryTest do
   use ExUnit.Case, async: true
 
-  alias TimelessBeamAcct.{Event, History, Options, Span}
+  alias TimelessBeamAcct.{Batch, Event, History, Options, Span}
 
   defp new(capacity) do
     name = :"history_test_#{System.unique_integer([:positive])}"
@@ -54,5 +54,55 @@ defmodule TimelessBeamAcct.HistoryTest do
   test "of a collector that is not running there is none" do
     assert History.events(:no_such_collector) == []
     assert History.spans(:no_such_collector) == []
+    assert History.reading(:no_such_collector) == []
+  end
+
+  defp batch(ts, samples) do
+    Enum.reduce(samples, Batch.new(ts), fn {name, labels, value}, batch ->
+      Batch.push(batch, name, labels, value)
+    end)
+  end
+
+  test "the last reading is the last samples of each metric, and when they were read" do
+    {name, history} = new(10)
+    assert History.reading(name) == []
+
+    history =
+      History.read(
+        history,
+        batch(100, [
+          {"beam_vm_run_queue", [], 1},
+          {"beam_group_processes", [{"group", "A"}], 3},
+          {"beam_group_processes", [{"group", "B"}], 4}
+        ])
+      )
+
+    assert Enum.sort(History.reading(name)) == [
+             {"beam_group_processes", 100, [{[{"group", "A"}], 3}, {[{"group", "B"}], 4}]},
+             {"beam_vm_run_queue", 100, [{[], 1}]}
+           ]
+
+    # A reading of the node alone leaves those of the processes as they
+    # were, and each says when it was read.
+    history = History.read(history, batch(110, [{"beam_vm_run_queue", [], 2}]))
+
+    assert Enum.sort(History.reading(name)) == [
+             {"beam_group_processes", 100, [{[{"group", "A"}], 3}, {[{"group", "B"}], 4}]},
+             {"beam_vm_run_queue", 110, [{[], 2}]}
+           ]
+
+    # A group that has gone is not among the samples that take their place.
+    history = History.read(history, batch(120, [{"beam_group_processes", [{"group", "B"}], 5}]))
+    assert {"beam_group_processes", 120, [{[{"group", "B"}], 5}]} in History.reading(name)
+
+    # A reading with nothing in it takes the place of nothing.
+    History.read(history, Batch.new(130))
+    assert length(History.reading(name)) == 2
+  end
+
+  test "no reading is kept by a history that keeps nothing" do
+    {name, history} = new(0)
+    History.read(history, batch(100, [{"beam_vm_run_queue", [], 1}]))
+    assert History.reading(name) == []
   end
 end

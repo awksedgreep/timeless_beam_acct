@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `mix timeless_beam_acct.watch`: a node in a terminal, now and at any
+  moment the planes hold, with the screen and the keys of
+  `timeless-acct watch`. Groups, processes, jobs, and exits; the
+  timeline across the top with what went wrong marked under it; `←` `→`
+  through time, `t` to a moment, `m` to the moment of an exit or a job,
+  `/` to look for one. Now is asked of the collector in the node, and
+  every other moment of the planes it writes to.
+- `TimelessBeamAcct.reading/1`: the samples the sink was last given,
+  kept in memory with the records, for whatever draws a node as it is
+  now. None are kept with `history: 0`.
+- `TimelessBeamAcct.snapshot/2` takes `:most`, `:group`, and `:app`: the
+  first few processes of a node, or those of one group, where a node has
+  too many to ask for all of.
+- `TimelessBeamAcct.Http` keeps as much of an answer as it is told to,
+  with `:keep`. It kept 64 KiB of any, which is enough of an answer to a
+  write and not of one to a question.
 - What the planes store of what a collector sends was measured over an
   hour (`bench/compression.exs`, `bench/compression_report.py`): 3.9
   bytes a sample, 43 a record, 27 a span, and 9, 45, and 40 with the

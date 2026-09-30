@@ -102,6 +102,23 @@ defmodule TimelessBeamAcct.HttpTest do
     end
   end
 
+  test "as much of a body is kept as whoever asks says", %{plane: plane} do
+    body = :binary.copy(<<"0123456789abcdef">>, 8 * 1024)
+    TestPlane.respond_with(plane, 200, body)
+
+    for mode <- [:content_length, :chunked, :until_close] do
+      TestPlane.mode(plane, mode)
+      # All of an answer to a question.
+      assert {:ok, 200, ^body} = Http.get(TestPlane.url(plane), [], 2_000, keep: 1024 * 1024)
+      assert {:ok, 200, kept} = Http.get(TestPlane.url(plane), [], 2_000, keep: 1000)
+      assert kept == binary_part(body, 0, 1000), "#{inspect(mode)} kept #{byte_size(kept)} bytes"
+    end
+
+    # What is not an amount is the amount kept unless told.
+    assert {:ok, 200, kept} = Http.get(TestPlane.url(plane), [], 2_000, keep: :all)
+    assert byte_size(kept) == 64 * 1024
+  end
+
   test "a body larger than a packet arrives whole", %{plane: plane} do
     body = :crypto.strong_rand_bytes(300_000)
     assert {:ok, 200, ""} = Http.post(TestPlane.url(plane), body, [], 2_000)

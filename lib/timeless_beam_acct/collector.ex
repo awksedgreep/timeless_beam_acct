@@ -257,7 +257,8 @@ defmodule TimelessBeamAcct.Collector do
       spans: spans
     }
 
-    state = %{state | history: History.add(state.history, events, spans)}
+    history = state.history |> History.add(events, spans) |> History.read(tick.metrics)
+    state = %{state | history: history}
 
     cond do
       Tick.empty?(tick) -> state

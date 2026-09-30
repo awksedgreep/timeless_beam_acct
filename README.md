@@ -25,6 +25,34 @@ It stores them in Timeless, so they can be put on a
 timeline dragged back: what was this node doing, and which process was
 doing it, at 03:12 last Tuesday.
 
+And it can be watched where it is, in a terminal, with the same timeline
+and the keys of `timeless-acct watch`:
+
+```text
+$ mix timeless_beam_acct.watch tba_bench@ohm
+┌ timeless-beam-acct tba_bench@ohm ──────────────────────────────────── ● LIVE 2026-09-30 09:55:00 ┐
+│run queue 0   schedulers 0.1% (cpu 48.6%)   mem 142 MiB                                           │
+│work 1.8M reds/s   processes 526 (+82.5 -82.3/s)   gc 152/s   io ↓21 B/s ↑127 KiB/s   atoms 2.6%  │
+│                                                               ▅▄▅▅▆▆▆▆▆▆▇▇▇█▇▇▆▇▇▆▆▅▅▅▄▄▅▄▅▅▆▆▆▅▅│
+│                                                               !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!▲│
+└ 08:55 ──────────────────────── schedulers over 1h00m, up to 0.2% ───────────────────────── 09:55 ┘
+ 1 Groups  2 Processes  3 Jobs  4 Exits    by work
+GROUP                                           WORK%   MEMORY     PROCS  MSGQ    REDS/s    ENDED/s
+fn in Reports.Monthly.run/1                        39.5   50.6 KiB     13       0      727k      0.7
+Reports.Monthly.run/1                              11.7   74.0 KiB      8       0      216k      0.1
+TimelessBeamAcct.Writer                             8.5    2.2 KiB      1       0      156k      0.0
+┌ fn in Reports.Monthly.run/1 work, the 10m00s before ───────────────────────────────── peak 57.5% ┐
+│ ▆▆                                                 ▃▄▄  █▄▄▁▁                  ▂▁▁   ▁▁▁▂▂       │
+│▅██          ▅▃▃▄▂▂  ▂▁▁▃▃   ▂▂▁             ▃▃▅▅ ▄▄███  █████▄          ▃▃     ███▄▅▅█████▂▂    ▅│
+│████▃▃   ▃▃▇▇██████  █████▄▅▅███▆▆   ▅▅▅██▃▃▄████▄█████▅▅████████▅▂▂     ██▃  ▃▃█████████████▃▇▇▄█│
+│██████▇▇▂█████████████████████████▄▅▅███████████████████████████████▄▄ █████▅▅████████████████████│
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+ ←→ 10s ,. 1m <> 10m [] 1h t go to l live -+ zoom tab view enter open m its moment s sort / only ? h
+```
+
+That is the node of `bench/watch_node.exs`, in which a request in ten
+is made to fail: the `!` under the timeline is each of them.
+
 ```text
 iex> TimelessBeamAcct.top(app: "busy", n: 4)
 2026-09-29 18:05:20  busy@ohm  (78 processes)
@@ -660,7 +688,7 @@ requests a second: 2,000 processes ended, none of them lived for a
 millisecond, and no sweep saw any of them.
 
 From a terminal, the same, of another node: `mix timeless_beam_acct.top`,
-`.exits`, `.trees`, `.check`.
+`.exits`, `.trees`, `.check`. And `.watch`, which is the next section.
 
 Times are `now`, a distance back (`-90s`, `-15m`, `-2h`, `-1d`), a local
 time today (`14:30`), a local date and time, epoch seconds, or a
@@ -669,6 +697,109 @@ time today (`14:30`), a local date and time, epoch seconds, or a
 These read what the collector has in memory: the processes as of the last
 sweep, and the last `:history` (2000) records and spans. The history is
 in the stores.
+
+## Watching a node in a terminal
+
+```sh
+mix timeless_beam_acct.watch app@ohm --cookie secret
+mix timeless_beam_acct.watch app@ohm --at "2026-09-29 03:12" --view jobs
+mix timeless_beam_acct.watch --metrics-url http://127.0.0.1:8428 --node app@ohm
+```
+
+This is `timeless-acct watch`, of a node where that is of a host: the
+same screen, and the same keys.
+
+Four views of one moment: the groups, the processes, the jobs that ran in
+the quarter of an hour before, and the processes that ended in it. Under
+the groups and the processes is the last ten minutes of the row that is
+picked.
+
+| key | |
+|---|---|
+| `←` `→` | one reading back, forward: ten seconds, unless the collector was told otherwise |
+| `,` `.` | a minute |
+| `<` `>` | ten minutes |
+| `[` `]` | an hour |
+| `{` `}` | a day |
+| `home` | the first moment in the store |
+| `l`, `end` | now |
+| `t` | go to a moment, typed: `-15m`, `14:30`, `2026-09-29 14:30` |
+| `m` | go to the moment of the selected exit or job |
+| `-` `+` | a longer stretch of the timeline, a shorter: ten minutes to a week |
+| `tab`, `1` to `4` | the view |
+| `↑` `↓`, `j` `k` | the row |
+| `enter` | open the row: a group into its processes, a process or an exit into what is known of it |
+| `esc` | back out of a group |
+| `s` | sort by work, memory, queue, name |
+| `a` | applications, in place of groups |
+| `/` | show only what matches |
+| `q` | quit |
+
+What differs from the screen of a host is what a node has that a host has
+not. Where that has units it has groups, and `a` shows the applications
+in their place, as there it shows the slices. Work is a share of the
+node's reductions, where there it is a share of a CPU. The third sort is
+by the messages waiting, where there it is by I/O.
+
+Across the top is the timeline: how busy the schedulers were over the
+last hour, with `▲` under the moment looked at, `!` where a process
+raised and nothing caught it, and `·` where one was killed. Looking for
+what went wrong is looking along it; or finding it among the exits, with
+`/` and `killed`, and pressing `m` to see the node as it was then.
+
+`/` looks for what matches, in what is on the screen as it is typed, and
+with `enter` in the store as far back as the timeline shows: a busy node
+ends hundreds of processes a second, and the one looked for is seldom
+among the last few.
+
+**Now is what the collector in the node last read**, asked of the node.
+It is as old as the collector's interval, and asking costs the node an
+answer and no reading of its own: nothing is read of a node here that its
+collector has not read already. A node is asked again when its collector
+has read again, and for the first three hundred of its processes by what
+they do, by what they hold, and by what they have waiting, and not for
+all hundred thousand of them. Going into a group asks for the processes
+of that group.
+
+**Every other moment is read from the store**, which is the planes a
+collector with the `:http` sink writes to. The collector says where they
+are, and they are read over HTTP: a moment is one question, and is
+answered in some forty milliseconds. Planes that want a token to be read
+are given one with `--token`, or one each with `--metrics-token`,
+`--logs-token`, and `--traces-token`: a token that may write is often one
+that may not read.
+
+Two things follow. Going back from now lands on the last moment the
+planes hold, which is the collector's last reading or the one before.
+And at any moment but now, the processes are those that had series of
+their own, which is two hundred of them at most; now has every process
+the collector has.
+
+Without a node, only a store is watched, and now is the last moment in
+it:
+
+```sh
+mix timeless_beam_acct.watch --metrics-url http://127.0.0.1:8428 \
+  --logs-url http://127.0.0.1:9428 --traces-url http://127.0.0.1:10428 --node app@ohm
+```
+
+A collector with any other sink writes to nothing that is read here, and
+what is watched is now, with the processes that ended and the jobs that
+ran as the collector has them in memory: the last two thousand of each.
+
+Opening a process shows what it is, in which application, what it is
+running, and the functions it is in; and, if it has ended since the
+moment looked at, how: its reason, where it raised, what started it, and
+its trace. Going into a group and then back through time stays in the
+group.
+
+`--print 120x40` draws the screen once, as text, for a script or for
+where there is no terminal.
+
+It is written on what Elixir and OTP have and nothing else, as the
+collector is. From OTP 28 the VM reads a terminal a key at a time; before
+that the terminal is told to give one, with `stty`. It runs where it is
+typed, and is no part of what `attach` puts into a node.
 
 ## Cost
 
@@ -682,7 +813,7 @@ ending every second.
 | | |
 |---|---|
 | collector CPU | about 2% of one CPU: 500,000 reductions a second, of which the writer's encoding is two thirds |
-| collector memory | under 100 KiB between ticks, and 4.5 MiB for the records and spans kept in memory |
+| collector memory | under 100 KiB between ticks, and 4.5 MiB for the records and spans kept in memory, and some 250 bytes a sample for the last reading |
 | a sweep | 2 ms |
 | samples | 1,500 a tick: 950 of groups, 250 of processes, 140 of tables, 90 of applications, 60 of the node |
 | on the wire, to the planes | 160 KiB of samples a tick, uncompressed |
@@ -838,8 +969,15 @@ that was read: `:observer`, `:recon`, or the application's own count.
   tracer that is a process; one that is native code could ask.
 - **A limit to the series of processes, over time.** There is one to how
   many have series at once.
-- **Reading the stores.** `top`, `exits`, and `trees` read what the
-  collector has in memory. A moment last Tuesday is looked at on a canvas.
+- **Reading the stores in the node.** `watch` reads the planes. What a
+  collector with the `:timeless` sink writes to the stores of its own
+  node is not read by it yet, and that node is watched as it is now.
+  `top`, `exits`, and `trees` read what the collector has in memory.
+- **Jobs that are running, in `watch`.** A job is there when its
+  processes have ended. `timeless-acct watch` has the running ones first.
+- **What the VM remarked on, in `watch`.** A long garbage collection is a
+  record, and is on a canvas and in `exits(kind: "long_gc")`, and has no
+  view.
 - **A page in LiveDashboard.** It is to be a project of its own, and
   [docs/DASHBOARD_PLAN.md](docs/DASHBOARD_PLAN.md) is the plan for it.
 - **Memory a process holds outside its heap.** Large binaries are counted
@@ -864,6 +1002,18 @@ collectors against readings written by hand and against the live VM, the
 tracer and the collection loop against processes the tests start, the
 HTTP sink against a server the tests run, and putting a collector into a
 node against nodes the tests start and stop.
+
+The screen of `watch` is tested as the text on it: against a node and a
+store written by hand, against a collector in the node that runs the
+tests, and against a plane that answers what the test tells it to. A
+test has no terminal. For the screen on one, with keys pressed at it:
+
+```sh
+scripts/pty_keys.py --size 120x40 --keys 'j,j,\r,1.5,\x34,q' -- \
+  mix timeless_beam_acct.watch app@ohm --cookie secret
+```
+
+prints what the terminal would show after them.
 
 ### Against the planes
 

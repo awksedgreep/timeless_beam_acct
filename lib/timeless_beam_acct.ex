@@ -171,9 +171,16 @@ defmodule TimelessBeamAcct do
   @doc """
   The processes as of the last sweep, and the node they are in: what
   `top/1` prints.
+
+  A node may have a hundred thousand processes, and whoever draws it
+  wants the first few of them:
+
+    * `:most`: only so many by what they do, so many by what they hold,
+      and so many by what they have waiting
+    * `:group`, `:app`: only those of a group, or of an application
   """
-  @spec snapshot(name()) :: Report.snapshot()
-  def snapshot(name \\ __MODULE__) do
+  @spec snapshot(name(), keyword()) :: Report.snapshot()
+  def snapshot(name \\ __MODULE__, opts \\ []) do
     status = Collector.status(name) || %{}
     vm = Map.get(status, :vm, %{})
     options = Map.get(status, :options)
@@ -183,7 +190,7 @@ defmodule TimelessBeamAcct do
       host: options && options.host,
       node: (options && options.node) || Atom.to_string(node()),
       vm: Map.put_new(vm, :processes, :erlang.system_info(:process_count)),
-      processes: Processes.snapshot(Options.name(name, :Processes), vm[:reductions_per_sec])
+      processes: Processes.snapshot(Options.name(name, :Processes), vm[:reductions_per_sec], opts)
     }
   end
 
@@ -261,6 +268,22 @@ defmodule TimelessBeamAcct do
   """
   @spec spans(name()) :: [TimelessBeamAcct.Span.t()]
   def spans(name \\ __MODULE__), do: History.spans(name)
+
+  @doc """
+  The last reading: the samples the sink was last given, a metric at a
+  time, as `{metric, epoch_seconds, [{labels, value}]}`.
+
+  This is the node as it is now, in the figures the stores have of every
+  other moment, for whatever draws it: `mix timeless_beam_acct.watch`
+  does. The labels are those of the series, without the host and the node
+  that the sink adds.
+
+  A reading of the node alone leaves the samples of the processes as they
+  were, so each metric says when it was read. None are kept by a
+  collector told `history: 0`.
+  """
+  @spec reading(name()) :: [History.read()]
+  def reading(name \\ __MODULE__), do: History.reading(name)
 
   ## What this node lets a collector see
 

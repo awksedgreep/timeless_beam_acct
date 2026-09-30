@@ -24,10 +24,11 @@ defmodule TimelessBeamAcct.Http do
   ## The answer
 
   A status outside 200..299 is an answer and not an error: the caller
-  decides what it means. The body is only ever shown to a person, in a
-  message, so 64 KiB of it is kept. Reading stops
+  decides what it means. To a collector the body is only ever shown to a
+  person, in a message, so 64 KiB of it is kept. Reading stops
   there, since nothing past it would be used and the request was answered
-  when the status was sent.
+  when the status was sent. Whoever asks a plane a question and wants all
+  of the answer says how much it may be, with `:keep`.
 
   ## TLS
 
@@ -64,7 +65,7 @@ defmodule TimelessBeamAcct.Http do
           | atom()
           | term()
   @type result :: {:ok, status :: 100..999, body :: binary()} | {:error, reason()}
-  @type option :: {:cacerts, [binary()]}
+  @type option :: {:cacerts, [binary()]} | {:keep, pos_integer()}
 
   @doc """
   Send `body` to `url`, and return what was answered.
@@ -135,11 +136,19 @@ defmodule TimelessBeamAcct.Http do
       try do
         with :ok <- send_request(socket, method, target, body, headers, deadline),
              {:ok, status, answered} <- read_head(socket, deadline) do
-          read_body(socket, status, answered, deadline)
+          read_body(socket, status, answered, deadline, kept(opts))
         end
       after
         close(socket)
       end
+    end
+  end
+
+  # How much of a body is kept.
+  defp kept(opts) do
+    case Keyword.get(opts, :keep) do
+      bytes when is_integer(bytes) and bytes > 0 -> bytes
+      _ -> @keep
     end
   end
 
@@ -259,20 +268,20 @@ defmodule TimelessBeamAcct.Http do
   defp header_name(name) when is_atom(name), do: name |> Atom.to_string() |> String.downcase()
   defp header_name(name) when is_binary(name), do: String.downcase(name)
 
-  defp read_body(_socket, status, _headers, _deadline) when status in [204, 304],
+  defp read_body(_socket, status, _headers, _deadline, _keep) when status in [204, 304],
     do: {:ok, status, ""}
 
-  defp read_body(socket, status, headers, deadline) do
+  defp read_body(socket, status, headers, deadline, keep) do
     read =
       cond do
         chunked?(headers) ->
-          read_chunks(socket, deadline, [], 0)
+          read_chunks(socket, deadline, [], 0, keep)
 
         length = List.keyfind(headers, "content-length", 0) ->
           case Integer.parse(String.trim(elem(length, 1))) do
             {bytes, ""} when bytes >= 0 ->
               with :ok <- setopts(socket, packet: :raw) do
-                read_exactly(socket, bytes, deadline, [], 0)
+                read_exactly(socket, bytes, deadline, [], 0, keep)
               end
 
             _ ->
@@ -281,12 +290,12 @@ defmodule TimelessBeamAcct.Http do
 
         true ->
           with :ok <- setopts(socket, packet: :raw) do
-            read_to_close(socket, deadline, [], 0)
+            read_to_close(socket, deadline, [], 0, keep)
           end
       end
 
     with {:ok, kept, _size} <- read do
-      {:ok, status, kept |> Enum.reverse() |> IO.iodata_to_binary() |> clip()}
+      {:ok, status, kept |> Enum.reverse() |> IO.iodata_to_binary() |> clip(keep)}
     end
   end
 
@@ -296,32 +305,34 @@ defmodule TimelessBeamAcct.Http do
     end)
   end
 
-  defp clip(body) when byte_size(body) > @keep, do: binary_part(body, 0, @keep)
-  defp clip(body), do: body
+  defp clip(body, keep) when byte_size(body) > keep, do: binary_part(body, 0, keep)
+  defp clip(body, _keep), do: body
 
   # `kept` is newest first, and `size` is how much is in it.
-  defp read_exactly(_socket, 0, _deadline, kept, size), do: {:ok, kept, size}
+  defp read_exactly(_socket, 0, _deadline, kept, size, _keep), do: {:ok, kept, size}
 
-  defp read_exactly(_socket, _bytes, _deadline, kept, size) when size >= @keep,
+  defp read_exactly(_socket, _bytes, _deadline, kept, size, keep) when size >= keep,
     do: {:ok, kept, size}
 
-  defp read_exactly(socket, bytes, deadline, kept, size) do
+  defp read_exactly(socket, bytes, deadline, kept, size, keep) do
     with {:ok, data} <- recv(socket, min(bytes, @piece), deadline) do
       read_exactly(
         socket,
         bytes - byte_size(data),
         deadline,
         [data | kept],
-        size + byte_size(data)
+        size + byte_size(data),
+        keep
       )
     end
   end
 
-  defp read_to_close(_socket, _deadline, kept, size) when size >= @keep, do: {:ok, kept, size}
+  defp read_to_close(_socket, _deadline, kept, size, keep) when size >= keep,
+    do: {:ok, kept, size}
 
-  defp read_to_close(socket, deadline, kept, size) do
+  defp read_to_close(socket, deadline, kept, size, keep) do
     case recv(socket, 0, deadline) do
-      {:ok, data} -> read_to_close(socket, deadline, [data | kept], size + byte_size(data))
+      {:ok, data} -> read_to_close(socket, deadline, [data | kept], size + byte_size(data), keep)
       {:error, :closed} -> {:ok, kept, size}
       {:error, reason} -> {:error, reason}
     end
@@ -329,9 +340,10 @@ defmodule TimelessBeamAcct.Http do
 
   # Each chunk is its size in hexadecimal on a line, the bytes, and a line
   # ending. The socket is asked for a line, then for bytes, in turn.
-  defp read_chunks(_socket, _deadline, kept, size) when size >= @keep, do: {:ok, kept, size}
+  defp read_chunks(_socket, _deadline, kept, size, keep) when size >= keep,
+    do: {:ok, kept, size}
 
-  defp read_chunks(socket, deadline, kept, size) do
+  defp read_chunks(socket, deadline, kept, size, keep) do
     with :ok <- setopts(socket, packet: :line),
          {:ok, line} <- recv(socket, 0, deadline),
          {:ok, bytes} <- chunk_size(line) do
@@ -340,9 +352,9 @@ defmodule TimelessBeamAcct.Http do
         {:ok, kept, size}
       else
         with :ok <- setopts(socket, packet: :raw),
-             {:ok, kept, size} <- read_exactly(socket, bytes, deadline, kept, size),
-             :ok <- end_of_chunk(socket, deadline, size) do
-          read_chunks(socket, deadline, kept, size)
+             {:ok, kept, size} <- read_exactly(socket, bytes, deadline, kept, size, keep),
+             :ok <- end_of_chunk(socket, deadline, size, keep) do
+          read_chunks(socket, deadline, kept, size, keep)
         end
       end
     end
@@ -361,9 +373,9 @@ defmodule TimelessBeamAcct.Http do
   end
 
   # Reading stopped inside the chunk if enough has been kept.
-  defp end_of_chunk(_socket, _deadline, size) when size >= @keep, do: :ok
+  defp end_of_chunk(_socket, _deadline, size, keep) when size >= keep, do: :ok
 
-  defp end_of_chunk(socket, deadline, _size) do
+  defp end_of_chunk(socket, deadline, _size, _keep) do
     with :ok <- setopts(socket, packet: :line),
          {:ok, line} <- recv(socket, 0, deadline) do
       if String.trim(line) == "",

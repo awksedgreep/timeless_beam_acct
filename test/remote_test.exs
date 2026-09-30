@@ -298,5 +298,13 @@ defmodule TimelessBeamAcct.RemoteTest do
     assert TimelessBeamAcct.Collector in modules
     assert TimelessBeamAcct.Sink.Http in modules
     refute Enum.any?(modules, &String.starts_with?(Atom.to_string(&1), "Elixir.Mix."))
+    # Nor what draws a node in a terminal, which runs where it is typed.
+    refute TimelessBeamAcct.Watch in modules
+    refute TimelessBeamAcct.Watch.Terminal in modules
+
+    refute Enum.any?(
+             modules,
+             &String.starts_with?(Atom.to_string(&1), "Elixir.TimelessBeamAcct.Watch")
+           )
   end
 end

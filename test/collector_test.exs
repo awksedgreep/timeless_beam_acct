@@ -124,6 +124,31 @@ defmodule TimelessBeamAcct.CollectorTest do
     end
   end
 
+  test "the last reading is kept, as the sink was given it" do
+    name = start()
+    # The first reading stores no samples, and is not one to keep.
+    assert TimelessBeamAcct.reading(name) == []
+
+    tick = reading(name)
+    kept = TimelessBeamAcct.reading(name)
+
+    samples =
+      for {metric, _at, series} <- kept, {labels, value} <- series, do: {metric, labels, value}
+
+    assert Enum.sort(samples) == Enum.sort(TimelessBeamAcct.Batch.samples(tick.metrics))
+    assert Enum.all?(kept, fn {_metric, at, _series} -> at == tick.metrics.ts end)
+    assert {"beam_vm_processes", _, [{[], count}]} = List.keyfind(kept, "beam_vm_processes", 0)
+    assert count > 10
+
+    assert TimelessBeamAcct.reading(:no_such_collector) == []
+  end
+
+  test "no reading is kept by a collector told to keep no history" do
+    name = start(history: 0)
+    reading(name)
+    assert TimelessBeamAcct.reading(name) == []
+  end
+
   test "the first reading stores no samples" do
     name = :"collector_test_#{System.unique_integer([:positive])}"
 
@@ -435,6 +460,25 @@ defmodule TimelessBeamAcct.CollectorTest do
       snapshot = TimelessBeamAcct.snapshot(name)
       assert snapshot.vm.processes > 10
       assert Enum.any?(snapshot.processes, &(&1.name == Atom.to_string(registered)))
+
+      # Of a node with many, the first few: by what they do, what they
+      # hold, and what they have waiting.
+      few = TimelessBeamAcct.snapshot(name, most: 2).processes
+      assert length(few) in 2..6
+      assert length(few) < length(snapshot.processes)
+      busiest = Enum.max_by(snapshot.processes, &(&1.reductions_per_sec || -1))
+      largest = Enum.max_by(snapshot.processes, & &1.memory_bytes)
+      assert busiest.pid in Enum.map(few, & &1.pid)
+      assert largest.pid in Enum.map(few, & &1.pid)
+
+      # And those of one group, or of one application.
+      # A name with a number after it is of a group without one.
+      mine = Enum.find(snapshot.processes, &(&1.name == Atom.to_string(registered)))
+      assert [of_group] = TimelessBeamAcct.snapshot(name, group: mine.group).processes
+      assert Map.delete(of_group, :age_seconds) == Map.delete(mine, :age_seconds)
+      kernel = TimelessBeamAcct.snapshot(name, app: "kernel", most: 1000).processes
+      assert kernel != [] and Enum.all?(kernel, &(&1.app == "kernel"))
+      assert TimelessBeamAcct.snapshot(name, group: "No.Such.Group").processes == []
       Agent.stop(agent)
     end
 

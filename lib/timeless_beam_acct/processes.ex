@@ -896,12 +896,19 @@ defmodule TimelessBeamAcct.Processes do
 
   `vm_rate` is the node's reductions a second, which each process's work
   is a share of.
+
+  A node may have a hundred thousand processes, and whoever draws it
+  wants the first few of them:
+
+    * `:most`: only so many by what they do, so many by what they hold,
+      and so many by what they have waiting
+    * `:group`, `:app`: only those of a group, or of an application
   """
-  @spec snapshot(atom() | :ets.tid(), number() | nil) :: [map()]
-  def snapshot(table, vm_rate \\ nil) do
+  @spec snapshot(atom() | :ets.tid(), number() | nil, keyword()) :: [map()]
+  def snapshot(table, vm_rate \\ nil, opts \\ []) do
     now = mono()
 
-    for row <- :ets.tab2list(table), tracked(row, :swept) != nil do
+    for row <- chosen(table, opts[:group], opts[:app], opts[:most]) do
       tracked(pid: pid, name: name, group: group, rate: rate) = row
 
       %{
@@ -921,6 +928,45 @@ defmodule TimelessBeamAcct.Processes do
     end
   rescue
     ArgumentError -> []
+  end
+
+  # The rows that were asked for, of those a sweep has seen.
+  defp chosen(table, nil, nil, nil) do
+    for row <- :ets.tab2list(table), tracked(row, :swept) != nil, do: row
+  end
+
+  # Four figures of each row are read, and not the row: the rows of the
+  # few that are chosen are read after.
+  defp chosen(table, group, app, most) do
+    figures =
+      :ets.foldl(
+        fn row, figures ->
+          if tracked(row, :swept) != nil and
+               (group == nil or tracked(row, :group) == group) and
+               (app == nil or (tracked(row, :app) || "none") == app) do
+            tracked(pid: pid, rate: rate, memory: memory, queue: queue) = row
+            [{pid, rate || -1, memory, queue} | figures]
+          else
+            figures
+          end
+        end,
+        [],
+        table
+      )
+
+    pids =
+      case most do
+        nil ->
+          Enum.map(figures, &elem(&1, 0))
+
+        most ->
+          for by <- 1..3,
+              {pid, _, _, _} <- figures |> Enum.sort_by(&elem(&1, by), :desc) |> Enum.take(most),
+              uniq: true,
+              do: pid
+      end
+
+    for pid <- pids, row <- :ets.lookup(table, pid), do: row
   end
 
   ## Applications

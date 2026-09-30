@@ -481,6 +481,27 @@ defmodule TimelessBeamAcct.Report do
     end
   end
 
+  @doc """
+  The processes of one job, a line each, drawn as the tree they were: the
+  lines under the first of a job that `trees/2` prints. `width` and
+  `max_lines` are as they are there, and 0 is all of them.
+  """
+  @spec tree_lines([Span.t()], non_neg_integer(), non_neg_integer()) :: [String.t()]
+  def tree_lines(spans, width, max_lines) when is_list(spans) do
+    all = Enum.sort_by(spans, &{&1.start_ns, &1.span_id})
+    tree(all, children(all), max_lines, width)
+  end
+
+  @doc """
+  The spans of a job that are its roots, in the order they started: those
+  whose parent is not among them.
+  """
+  @spec roots([Span.t()]) :: [Span.t()]
+  def roots(spans) when is_list(spans) do
+    all = Enum.sort_by(spans, &{&1.start_ns, &1.span_id})
+    Map.get(children(all), nil, all)
+  end
+
   defp job(%{trace: trace, spans: all, start: start}, max_lines, width) do
     stop = all |> Enum.map(&(&1.start_ns + &1.duration_ns)) |> Enum.max()
     children = children(all)
