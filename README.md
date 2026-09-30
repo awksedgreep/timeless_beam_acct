@@ -720,6 +720,36 @@ in it as without.
 Past `:max_records` (5,000) a tick, a process that ended is counted and
 not described, which is six microseconds and nothing on the wire.
 
+**What the planes make of it**: `bench/compression.exs`, which is an
+hour of a node of five hundred processes doing twelve kinds of thing, 65
+of them ending every second, sent to planes of timeless-libsql 0.8.5.
+`bench/compression_report.py` reads what they stored.
+
+| | sent | each, on the wire | each, stored | of the wire |
+|---|---:|---:|---:|---:|
+| samples | 885,804 | 119 bytes | 3.9 bytes | 3.3% |
+| accounting records | 235,225 | 497 bytes | 43 bytes | 8.7% |
+| spans | 235,225 | 732 bytes | 27 bytes | 3.7% |
+
+A day of that node is 80 MiB of samples, 233 MiB of records, and 147 MiB
+of spans. That is of what was sent. The file of the metrics plane had
+7.6 MiB of pages in use for 3.3 MiB of samples, and the rest was its
+4,999 series and the index of their chunks.
+
+**How long it is kept** is not for a collector to say. It keeps nothing,
+and what it writes to keeps what it was told to:
+
+| written to | samples | rollups | records and spans |
+|---|---|---|---|
+| planes started by hand | for good | none | for good |
+| `timeless_stack` 0.7.23 | 7 days | an hour for 30 days, a day for a year, 30 days for good | 7 days |
+| the stores of `timeless_phoenix` 2.0.3 | 7 days | a day for 90 days | 7 days |
+
+With samples, records, and spans kept for a week, a store comes to a
+week of them and stays there. Its series do not: a series whose samples
+have all gone is still a series. See "How many series that is, over
+time" in [DESIGN.md](DESIGN.md).
+
 What moves the cost, in order: how many processes end (`:max_records`,
 `records: :abnormal`, `traces: false`), how many processes there are
 (`:process_interval`, `:sweep_budget`), and how many groups and named

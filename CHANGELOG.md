@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- What the planes store of what a collector sends was measured over an
+  hour (`bench/compression.exs`, `bench/compression_report.py`): 3.9
+  bytes a sample, 43 a record, 27 a span. The README has it, with how
+  long each of the things written to keeps it.
+- DESIGN.md has the series of an hour and not of nineteen minutes, and
+  what was found of series whose samples have gone: they stay.
+
 ## 0.1.1
 
 What those who tried 0.1.0 first would have met, and what was found by

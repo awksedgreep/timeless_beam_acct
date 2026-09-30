@@ -115,16 +115,16 @@ pid in it, and no process has that pid again. So the series of a node
 are those of the tiers that are bounded, and five more for every process
 that has ever been given a place.
 
-Measured nineteen minutes into a run of `bench/compression.exs`, which is
-a node of some five hundred processes with 25 requests a second:
+Measured at the end of an hour of `bench/compression.exs`, which is a
+node of some five hundred processes with 25 requests a second:
 
 | | series |
 |---|---:|
-| of processes | 1,580 |
-| of groups | about 1,330 |
-| of tables, applications, the node, and the collector | about 410 |
+| of processes | 3,260 |
+| of groups | 1,332 |
+| of tables, applications, the node, and the collector | 407 |
 
-316 processes had had series and 153 had them then. That is 43 new
+652 processes had had series and 146 had them then. That is 42 new
 series a minute: ten thousand in an afternoon spent looking for what is
 wrong, sixty thousand in a day, and a million in sixteen days.
 
@@ -168,6 +168,43 @@ What can be done without either, by whoever leaves a collector running:
 | give series only to what stays | `min_age: "5m"` |
 | leave out what is notable only for its work | `notable_work: 100` |
 | give series to no process | `max_processes: 0` |
+
+### What is kept of them
+
+A collector keeps nothing. How long a sample is kept, and what is made
+of it when it is old, is said to the planes or the stores and not to the
+collector, and the README has what each says when nothing is said to it.
+
+What was asked is whether a store that a collector writes to grows to a
+size and stays there. It was tried: three metrics planes of
+timeless-libsql 0.8.5 told to keep samples for ninety seconds, one with
+no rollups, one keeping a rollup of a minute for five minutes, and one
+keeping it for thirty days. Each was given six thousand series for a
+minute, a thousand new ones every ten seconds, and after that only
+fifty that stay.
+
+| | after three minutes | after nine |
+|---|---|---|
+| samples of the six thousand | gone | gone |
+| their rollups, kept five minutes | there | gone |
+| their rollups, kept thirty days | there | there |
+| the six thousand series | there | there |
+
+Samples go when they are old and rollups go when they are old. Series do
+not go. With no rollups and no sample left of them, the six thousand
+were still counted and still listed, and were 255 bytes each in the
+file. Nothing in the planes removes a series.
+
+So a store that a collector is left writing to comes to a week of
+samples, records, and spans, and then grows by its series alone: by the
+bench node's count, sixty thousand a day and 15 MiB. A rollup kept for
+good is a row for every series for every thirty days it was written to,
+which is one row for nearly all of them.
+
+That is small beside a week of samples, which for that node is 560 MiB.
+It is not nothing: the planes read at most a million series to answer
+what series there are (`TIMELESS_METRICS_PROMQL_MAX_CATALOG_SERIES`),
+and that is the sixteen days above.
 
 ### A name that has a place is reported at every reading
 
