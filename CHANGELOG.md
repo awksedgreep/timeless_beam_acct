@@ -4,7 +4,8 @@
 
 - What the planes store of what a collector sends was measured over an
   hour (`bench/compression.exs`, `bench/compression_report.py`): 3.9
-  bytes a sample, 43 a record, 27 a span. The README has it, with how
+  bytes a sample, 43 a record, 27 a span, and 9, 45, and 40 with the
+  indexes: a fourteenth of what was sent. The README has it, with how
   long each of the things written to keeps it.
 - DESIGN.md has the series of an hour and not of nineteen minutes, and
   what was found of series whose samples have gone: they stay.

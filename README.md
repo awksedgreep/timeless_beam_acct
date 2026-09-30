@@ -725,16 +725,31 @@ hour of a node of five hundred processes doing twelve kinds of thing, 65
 of them ending every second, sent to planes of timeless-libsql 0.8.5.
 `bench/compression_report.py` reads what they stored.
 
-| | sent | each, on the wire | each, stored | of the wire |
-|---|---:|---:|---:|---:|
-| samples | 885,804 | 119 bytes | 3.9 bytes | 3.3% |
-| accounting records | 235,225 | 497 bytes | 43 bytes | 8.7% |
-| spans | 235,225 | 732 bytes | 27 bytes | 3.7% |
+| | sent | each, on the wire | each, stored | with its index | of the wire |
+|---|---:|---:|---:|---:|---:|
+| samples | 885,804 | 119 bytes | 3.9 bytes | 9.0 bytes | 7.6% |
+| accounting records | 235,225 | 497 bytes | 43 bytes | 45 bytes | 9.1% |
+| spans | 235,225 | 732 bytes | 27 bytes | 40 bytes | 5.5% |
+| all of it | | 376 MiB | 19.2 MiB | 26.7 MiB | 7.1% |
 
-A day of that node is 80 MiB of samples, 233 MiB of records, and 147 MiB
-of spans. That is of what was sent. The file of the metrics plane had
-7.6 MiB of pages in use for 3.3 MiB of samples, and the rest was its
-4,999 series and the index of their chunks.
+"Each, stored" is of what was compressed and nothing else. "With its
+index" is of every page in use in the file of the plane, which has in it
+the series, the index of their chunks, and the indexes of records and of
+traces. "Of the wire" is of that, and the wire is the body as it was
+sent: text, with the labels of a sample written out on every line, and
+not compressed.
+
+So what was sent is kept in a fourteenth of what it was sent in. Of
+samples that is a thirteenth; counted against the sixteen bytes that a
+sample is before it is compressed, and without the index, it is a
+quarter. These are gauges read every ten seconds, many of them of
+processes that were there for a minute, and a chunk had 28 samples in
+it.
+
+A day of that node is 183 MiB of samples, 243 MiB of records, and 216 MiB
+of spans, by the same count. The files are larger than their pages in
+use by what has been freed in them and not yet used again, which was
+4.6 MiB of the metrics file and 1 MiB of each of the others.
 
 **How long it is kept** is not for a collector to say. It keeps nothing,
 and what it writes to keeps what it was told to:

@@ -201,7 +201,8 @@ bench node's count, sixty thousand a day and 15 MiB. A rollup kept for
 good is a row for every series for every thirty days it was written to,
 which is one row for nearly all of them.
 
-That is small beside a week of samples, which for that node is 560 MiB.
+That is small beside a week of samples, which for that node is 1.3 GiB
+with the index of their chunks.
 It is not nothing: the planes read at most a million series to answer
 what series there are (`TIMELESS_METRICS_PROMQL_MAX_CATALOG_SERIES`),
 and that is the sixteen days above.
