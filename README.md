@@ -725,26 +725,27 @@ hour of a node of five hundred processes doing twelve kinds of thing, 65
 of them ending every second, sent to planes of timeless-libsql 0.8.5.
 `bench/compression_report.py` reads what they stored.
 
-| | sent | each, on the wire | each, stored | with its index | of the wire |
+| | sent | each, on the wire | each, stored | with its index | smaller by |
 |---|---:|---:|---:|---:|---:|
-| samples | 885,804 | 119 bytes | 3.9 bytes | 9.0 bytes | 7.6% |
-| accounting records | 235,225 | 497 bytes | 43 bytes | 45 bytes | 9.1% |
-| spans | 235,225 | 732 bytes | 27 bytes | 40 bytes | 5.5% |
-| all of it | | 376 MiB | 19.2 MiB | 26.7 MiB | 7.1% |
+| samples | 885,804 | 119 bytes | 3.9 bytes | 9.0 bytes | 92% (13:1) |
+| accounting records | 235,225 | 497 bytes | 43 bytes | 45 bytes | 91% (11:1) |
+| spans | 235,225 | 732 bytes | 27 bytes | 40 bytes | 94% (18:1) |
+| all of it | | 376 MiB | 19.2 MiB | 26.7 MiB | **93% (14:1)** |
+
+**What was sent was stored in 7% of the space: 93% compression, 14:1,
+index included.** Of the compressed data alone, and without the index,
+it is 95% (20:1), and of samples 97% (30:1).
 
 "Each, stored" is of what was compressed and nothing else. "With its
 index" is of every page in use in the file of the plane, which has in it
 the series, the index of their chunks, and the indexes of records and of
-traces. "Of the wire" is of that, and the wire is the body as it was
-sent: text, with the labels of a sample written out on every line, and
-not compressed.
-
-So what was sent is kept in a fourteenth of what it was sent in. Of
-samples that is a thirteenth; counted against the sixteen bytes that a
-sample is before it is compressed, and without the index, it is a
-quarter. These are gauges read every ten seconds, many of them of
-processes that were there for a minute, and a chunk had 28 samples in
-it.
+traces. "Smaller by" is of that, against the wire, and the wire is the
+body as it was sent: text, with the labels of a sample written out on
+every line, and not compressed. Counted against the sixteen bytes that
+a sample is before it is compressed, and without the index, samples are
+75% smaller (4:1). These are gauges read every ten seconds, many of
+them of processes that were there for a minute, and a chunk had 28
+samples in it.
 
 A day of that node is 183 MiB of samples, 243 MiB of records, and 216 MiB
 of spans, by the same count. The files are larger than their pages in
