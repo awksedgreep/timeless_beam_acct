@@ -140,11 +140,11 @@ defmodule TimelessBeamAcct.Watch.View do
           ]
       end
 
-    # A stretch within a day is told by the time; a longer one needs the
-    # day as well.
+    # A stretch within a day is told by the time; one of a day or more
+    # needs the day as well, since a day's two ends are the same time.
     tell = fn at ->
       text = Clock.format(at)
-      if to - from > 86_400, do: String.slice(text, 5, 11), else: String.slice(text, 11, 5)
+      if to - from >= 86_400, do: String.slice(text, 5, 11), else: String.slice(text, 11, 5)
     end
 
     below =

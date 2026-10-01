@@ -261,10 +261,14 @@ defmodule TimelessBeamAcct.Watch.ViewTest do
     assert Enum.at(lines, 5) =~ " schedulers over 1h00m, up to 49.0% "
     assert Enum.at(lines, 5) =~ String.slice(Clock.format(@at - 1800), 11, 5)
 
-    # A stretch of more than a day is told by the day as well.
-    week = %{detail | window: {@at - 7 * 86_400, @at}}
-    text = screen(State.new(@at, 10), Watched.snapshot(@at), week)
-    assert text =~ " " <> String.slice(Clock.format(@at), 5, 11) <> " "
+    # A stretch of a day or more is told by the day as well: a day's two
+    # ends are the same time.
+    for span <- [86_400, 7 * 86_400] do
+      long = %{detail | window: {@at - span, @at}}
+      text = screen(State.new(@at, 10), Watched.snapshot(@at), long)
+      assert text =~ " " <> String.slice(Clock.format(@at), 5, 11) <> " "
+      assert text =~ " " <> String.slice(Clock.format(@at - span), 5, 11) <> " "
+    end
   end
 
   test "a text is folded between its words" do
