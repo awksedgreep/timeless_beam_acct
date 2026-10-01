@@ -812,7 +812,7 @@ ending every second.
 
 | | |
 |---|---|
-| collector CPU | about 2% of one CPU by its reductions: 500,000 a second, of which the writer's encoding is two thirds. Measured the plain way, as the node's CPU with the collector and without it, on `bench/watch_node.exs` ending 65 processes a second: 4 to 6% of one core |
+| collector CPU | about 2% of one CPU by its reductions: 500,000 a second, of which the writer's encoding is two thirds. Measured the plain way, as the node's CPU with the collector and without it, on `bench/watch_node.exs`, which ends 65 processes a second and is the heaviest node here: **4 to 6% of one core**. That is the figure to plan with |
 | collector memory | under 100 KiB between ticks, and 4.5 MiB for the records and spans kept in memory, and some 250 bytes a sample for the last reading |
 | a sweep | 2 ms |
 | samples | 1,500 a tick: 950 of groups, 250 of processes, 140 of tables, 90 of applications, 60 of the node |
