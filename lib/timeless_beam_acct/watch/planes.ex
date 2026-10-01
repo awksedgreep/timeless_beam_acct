@@ -594,7 +594,11 @@ defmodule TimelessBeamAcct.Watch.Planes do
     end
   end
 
-  defp get(%__MODULE__{} = store, plane, base, path, params) do
+  # A plane that is busy with its own upkeep says so, and asks to be asked
+  # again. It is, once, after this long.
+  @again_ms 500
+
+  defp get(%__MODULE__{} = store, plane, base, path, params, again \\ true) do
     url = base <> path <> query(params)
 
     headers =
@@ -606,6 +610,10 @@ defmodule TimelessBeamAcct.Watch.Planes do
     case Http.get(url, headers, store.timeout, keep: @keep) do
       {:ok, status, body} when status in 200..299 ->
         {:ok, body}
+
+      {:ok, status, body} when again and status in [503, 429] ->
+        Process.sleep(@again_ms)
+        get(store, plane, base, path, params, false)
 
       {:ok, status, body} ->
         {:error, "#{base} answered #{status}: #{said(body)}"}

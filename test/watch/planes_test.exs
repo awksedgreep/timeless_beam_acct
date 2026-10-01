@@ -142,6 +142,38 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
       assert {:error, _} = Planes.reach(%{store | node: @node})
     end
 
+    test "a plane that is busy is asked again, once" do
+      # How many times it was asked, and how many busy answers it has left.
+      counter = :counters.new(2, [])
+      :counters.put(counter, 2, 1)
+
+      plane =
+        plane([
+          {"/api/v1/label/node/values",
+           fn _asked ->
+             :counters.add(counter, 1, 1)
+
+             if :counters.get(counter, 2) > 0 do
+               :counters.sub(counter, 2, 1)
+               {503, ~s({"error":"storage is temporarily busy; retry request"})}
+             else
+               %{"status" => "success", "data" => [@node]}
+             end
+           end}
+        ])
+
+      {:ok, store} = Planes.new(metrics_url: TestPlane.url(plane))
+      assert {:ok, %Planes{node: @node}} = Planes.reach(store)
+      assert :counters.get(counter, 1) == 2
+
+      # Busy twice is busy.
+      :counters.put(counter, 1, 0)
+      :counters.put(counter, 2, 2)
+      assert {:error, why} = Planes.reach(store)
+      assert why =~ "answered 503: storage is temporarily busy"
+      assert :counters.get(counter, 1) == 2
+    end
+
     test "a token is sent to the plane it is for" do
       plane = plane([{"/api/v1/label/node/values", %{"status" => "success", "data" => [@node]}}])
       url = TestPlane.url(plane)
