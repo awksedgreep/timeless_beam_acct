@@ -181,7 +181,7 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
       {:ok, store} = Planes.new(metrics_url: url, token: "all", logs_token: "logs", logs_url: url)
       assert store.tokens == %{metrics: "all", logs: "logs", traces: "all"}
       {:ok, _} = Planes.reach(store)
-      Store.incidents(store, 0.0, 10.0)
+      Store.incidents(store, 0.0, 10.0, 10)
 
       assert ["Bearer all", "Bearer logs", "Bearer logs"] =
                for(request <- TestPlane.requests(plane), do: request.headers["authorization"])
@@ -414,13 +414,63 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
            end}
         ])
 
-      assert Store.incidents(store(plane, host: "ohm"), 100.0, 200.0) == [
-               %{at: 105.0, error: false},
-               %{at: 130.0, error: true}
-             ]
+      store = store(plane, host: "ohm")
+
+      assert {[%{at: 105.0, error: false}, %{at: 130.0, error: true}], ^store} =
+               Store.incidents(store, 100.0, 200.0, 10)
 
       assert [%{"start" => "100", "end" => "200", "host" => "ohm"}, _] =
                asked(plane, "/select/logsql/query")
+    end
+
+    test "badly, further back than are read at once, is asked about a part at a time" do
+      # Errors every second from 100 to 200; kills at 105 and 150.
+      plane =
+        plane([
+          {"/select/logsql/query",
+           fn %{"level" => level, "start" => start, "end" => stop, "limit" => limit} ->
+             {start, stop, limit} =
+               {String.to_integer(start), String.to_integer(stop), String.to_integer(limit)}
+
+             ats =
+               case level do
+                 "error" -> for at <- stop..start//-1, at >= 100 and at <= 200, do: at
+                 "warning" -> for at <- [150, 105], at >= start and at <= stop, do: at
+               end
+
+             lines(for at <- Enum.take(ats, limit), do: record(at / 1, %{"level" => level}))
+           end}
+        ])
+
+      store = %{store(plane) | most_incidents: 20}
+      {incidents, store} = Store.incidents(store, 100.0, 200.0, 10)
+
+      # The last twenty errors reach back to 181; each of the eight parts
+      # before that was asked about, and has one.
+      errors = incidents |> Enum.filter(& &1.error) |> Enum.map(& &1.at)
+      assert length(errors) == 28
+      assert Enum.count(errors, &(&1 >= 181)) == 20
+
+      # One in the middle of each part that was asked about.
+      assert Enum.sort(Enum.filter(errors, &(&1 < 181))) ==
+               for(part <- 0..7, do: 105.0 + part * 10)
+
+      # The kills were all read at once, and none was asked about again.
+      assert Enum.filter(incidents, &(not &1.error)) ==
+               [%{at: 105.0, error: false}, %{at: 150.0, error: false}]
+
+      assert length(asked(plane, "/select/logsql/query")) == 2 + 8
+      assert map_size(store.probed) == 8
+
+      # A part of the past does not change, and is not asked about again.
+      TestPlane.clear(plane)
+      {again, store} = Store.incidents(store, 100.0, 200.0, 10)
+      assert Enum.sort_by(again, & &1.at) == Enum.sort_by(incidents, & &1.at)
+      assert length(asked(plane, "/select/logsql/query")) == 2
+
+      # A part that has left the stretch is let go of.
+      {_later, store} = Store.incidents(store, 150.0, 250.0, 10)
+      assert Enum.all?(store.probed, fn {{_level, _start, stop}, _} -> stop >= 150 end)
     end
 
     test "is read from the last backwards, and what is wanted is chosen as it is read" do
@@ -497,7 +547,7 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
                Store.exits(store(plane), %{until: 9.0, span: 5.0, limit: 3}, fn _ -> true end)
 
       assert why =~ "answered 503: busy"
-      assert Store.incidents(store(plane), 0.0, 9.0) == []
+      assert {[], _store} = Store.incidents(store(plane), 0.0, 9.0, 10)
       assert Store.record(store(plane), "A", "<0.1.0>", 0.0) == nil
     end
   end

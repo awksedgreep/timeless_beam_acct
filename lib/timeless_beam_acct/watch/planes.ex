@@ -48,7 +48,12 @@ defmodule TimelessBeamAcct.Watch.Planes do
             host: nil,
             timeout: 5_000,
             # The first moment held, and when that was found out.
-            first: nil
+            first: nil,
+            # The most badly ended processes read at once for a timeline.
+            most_incidents: 5000,
+            # What was found out of parts of a timeline the last answers
+            # did not reach: `{level, from, to}` to an incident, or nil.
+            probed: %{}
 
   # An answer may be this long. A moment of a node with two hundred
   # groups and two hundred processes is half a megabyte.
@@ -62,8 +67,6 @@ defmodule TimelessBeamAcct.Watch.Planes do
   @first_for 300
   # The most jobs whose spans are all read.
   @jobs 30
-  # The most badly ended processes marked on a timeline.
-  @incidents 5000
 
   @doc """
   A store, from what was said of where it is. `{:error, why}` if something
@@ -351,15 +354,90 @@ defmodule TimelessBeamAcct.Watch.Planes do
   end
 
   @impl true
-  def incidents(%__MODULE__{} = store, from, to) do
-    for {level, error} <- [{"error", true}, {"warning", false}],
-        row <- records(store, [level: level, limit: @incidents], from, to),
-        row["kind"] == "exit",
-        ours?(store, row),
-        at = moment(row["_time"]) do
-      %{at: at, error: error}
-    end
-    |> Enum.sort_by(& &1.at)
+  def incidents(%__MODULE__{} = store, from, to, parts) do
+    parts = max(parts, 1)
+    each = (to - from) / parts
+
+    {found, probes} =
+      Enum.reduce([{"error", true}, {"warning", false}], {[], []}, fn {level, error},
+                                                                      {found, probes} ->
+        rows = records(store, [level: level, limit: store.most_incidents], from, to)
+
+        incidents =
+          for row <- rows,
+              row["kind"] == "exit",
+              ours?(store, row),
+              at = moment(row["_time"]),
+              do: %{at: at, error: error}
+
+        # A busy node ends more processes badly in a stretch than are read
+        # at once, and the answer reaches back only so far. The parts of
+        # the stretch before that are asked about one at a time, for one
+        # process each: a mark says that one ended in that part, and not
+        # how many or when, so what is found is put in the middle of it.
+        reached =
+          if length(rows) >= store.most_incidents,
+            do: incidents |> Enum.map(& &1.at) |> Enum.min(fn -> to end),
+            else: from
+
+        probes =
+          probes ++
+            for part <- 0..(parts - 1),
+                start = from + each * part,
+                stop = start + each,
+                stop <= reached,
+                do:
+                  {level, error, trunc(Float.floor(start)), trunc(Float.ceil(stop)),
+                   start + each / 2}
+
+        {found ++ incidents, probes}
+      end)
+
+    probed =
+      probes
+      |> Enum.reject(fn {level, _, start, stop, _} ->
+        Map.has_key?(store.probed, {level, start, stop})
+      end)
+      |> Task.async_stream(
+        fn {level, error, start, stop, middle} ->
+          # Asked by whole seconds, which reach a little past the part:
+          # what is found is of the part only if it is within it.
+          found =
+            store
+            |> records([level: level, limit: 5, order: "desc"], start, stop)
+            |> Enum.any?(fn row ->
+              row["kind"] == "exit" and ours?(store, row) and
+                case moment(row["_time"]) do
+                  at when is_number(at) -> at >= middle - each / 2 and at <= middle + each / 2
+                  _ -> false
+                end
+            end)
+
+          {{level, start, stop}, if(found, do: %{at: middle, error: error})}
+        end,
+        max_concurrency: 8,
+        timeout: store.timeout + 1000,
+        on_timeout: :kill_task
+      )
+      |> Enum.flat_map(fn
+        {:ok, {key, incident}} -> [{key, incident}]
+        _ -> []
+      end)
+      |> Map.new()
+
+    # What was found out of a part is kept while the part is in the
+    # stretch: a part of the past does not change.
+    kept =
+      store.probed
+      |> Map.merge(probed)
+      |> Map.filter(fn {{_level, start, stop}, _} -> stop >= from and start <= to end)
+
+    marked =
+      for {level, _error, start, stop, _middle} <- probes,
+          incident = kept[{level, start, stop}],
+          do: incident
+
+    {Enum.sort_by(found ++ marked, & &1.at), %{store | probed: kept}}
   end
 
   @impl true

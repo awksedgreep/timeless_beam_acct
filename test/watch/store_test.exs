@@ -87,7 +87,7 @@ defmodule TimelessBeamAcct.Watch.StoreTest do
     assert Store.history(store, "m", "k", "w", 0.0, 1.0) == []
     assert Store.spacing(store, 1.0) == {nil, nil}
     assert Store.timeline(store, 0.0, 1.0) == {[], 10.0}
-    assert Store.incidents(store, 0.0, 1.0) == []
+    assert Store.incidents(store, 0.0, 1.0, 10) == {[], store}
     assert Store.exits(store, reach, fn _ -> true end) == {:ok, []}
     assert Store.jobs(store, reach, 80, fn _ -> true end) == {:ok, []}
     assert Store.record(store, "A", "<0.1.0>", 0.0) == nil

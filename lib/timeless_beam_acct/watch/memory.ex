@@ -32,11 +32,13 @@ defmodule TimelessBeamAcct.Watch.Memory do
   def timeline(%__MODULE__{}, _from, _to), do: {[], 10.0}
 
   @impl true
-  def incidents(%__MODULE__{} = store, from, to) do
-    for exit <- ended(store),
-        exit.at >= from and exit.at <= to,
-        exit.level in ["error", "warning"],
-        do: %{at: exit.at, error: exit.level == "error"}
+  def incidents(%__MODULE__{} = store, from, to, _parts) do
+    {for(
+       exit <- ended(store),
+       exit.at >= from and exit.at <= to,
+       exit.level in ["error", "warning"],
+       do: %{at: exit.at, error: exit.level == "error"}
+     ), store}
   end
 
   @impl true

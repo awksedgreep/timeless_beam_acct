@@ -125,7 +125,7 @@ defmodule TimelessBeamAcct.Watched do
     end
 
     @impl true
-    def incidents(store, _from, _to), do: store.incidents
+    def incidents(store, _from, _to, _parts), do: {store.incidents, store}
 
     @impl true
     def exits(store, reach, wanted) do

@@ -87,8 +87,13 @@ defmodule TimelessBeamAcct.Watch.Store do
   """
   @callback timeline(t(), from :: float(), to :: float()) :: {[{float(), float()}], float()}
 
-  @doc "The processes that ended badly over a stretch of time."
-  @callback incidents(t(), from :: float(), to :: float()) :: [incident()]
+  @doc """
+  The processes that ended badly over a stretch of time that is drawn in
+  so many parts: enough of them that every part in which one ended has
+  one, and the store, which may have kept what it found out.
+  """
+  @callback incidents(t(), from :: float(), to :: float(), parts :: pos_integer()) ::
+              {[incident()], t()}
 
   @doc "The processes that ended within reach and are wanted, the last to end first."
   @callback exits(t(), reach(), wanted :: (exit() -> boolean())) ::
@@ -109,7 +114,7 @@ defmodule TimelessBeamAcct.Watch.Store do
 
   for {name, arity} <-
         [range: 1, at: 3, history: 6, spacing: 2, timeline: 3] ++
-          [incidents: 3, exits: 3, record: 4, jobs: 4] do
+          [incidents: 4, exits: 3, record: 4, jobs: 4] do
     args = Macro.generate_arguments(arity - 1, __MODULE__)
 
     @doc false

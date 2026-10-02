@@ -67,6 +67,8 @@ defmodule TimelessBeamAcct.Watch do
             paced: nil,
             # What the node was last asked, and what it answered.
             asked: nil,
+            # How wide the terminal is.
+            columns: 100,
             refresh: 2_000
 
   @doc """
@@ -376,14 +378,18 @@ defmodule TimelessBeamAcct.Watch do
     else
       {timeline, step} = Store.timeline(watch.store, elem(window, 0), to)
 
+      {incidents, store} =
+        Store.incidents(watch.store, elem(window, 0), to, max(watch.columns - 2, 1))
+
       %{
         watch
-        | timeline_read: {ms, window},
+        | store: store,
+          timeline_read: {ms, window},
           detail: %{
             detail
             | timeline: timeline,
               timeline_step: step,
-              incidents: Store.incidents(watch.store, elem(window, 0), to),
+              incidents: incidents,
               window: window
           }
       }
@@ -625,7 +631,8 @@ defmodule TimelessBeamAcct.Watch do
     {%{watch | state: state}, canvas}
   end
 
-  defp sized(watch, {columns, _rows}), do: %{watch | width: max(columns - 40, 40)}
+  defp sized(watch, {columns, _rows}),
+    do: %{watch | width: max(columns - 40, 40), columns: columns}
 
   # The screen as the text on it, of a size.
   @doc false
