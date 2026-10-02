@@ -104,8 +104,8 @@ defmodule TimelessBeamAcct.Watched do
     def range(store), do: {store.range, store}
 
     @impl true
-    def at(store, at, within) do
-      asked(store, {:at, at, within})
+    def at(store, at, within, tiers) do
+      asked(store, {:at, at, within, tiers})
       if store.error, do: {:error, store.error}, else: {:ok, store.series}
     end
 

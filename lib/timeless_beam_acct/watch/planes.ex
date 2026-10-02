@@ -245,11 +245,12 @@ defmodule TimelessBeamAcct.Watch.Planes do
   @at_once 8
 
   @impl true
-  def at(%__MODULE__{} = store, at, within) do
+  def at(%__MODULE__{} = store, at, within, tiers) do
     labels = for {key, value} <- who(store), do: ~s[#{key}="#{escape(value)}"]
 
     answers =
-      Data.metrics()
+      tiers
+      |> Data.metrics()
       |> Task.async_stream(
         fn metric ->
           get(store, :metrics, "/api/v1/query",

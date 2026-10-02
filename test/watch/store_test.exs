@@ -83,7 +83,7 @@ defmodule TimelessBeamAcct.Watch.StoreTest do
     reach = %{until: 10.0, span: 10.0, limit: 5}
 
     assert Store.range(store) == {nil, store}
-    assert Store.at(store, 1.0, 1.0) == {:ok, %{}}
+    assert Store.at(store, 1.0, 1.0, [:vm]) == {:ok, %{}}
     assert Store.history(store, "m", "k", "w", 0.0, 1.0) == []
     assert Store.spacing(store, 1.0) == {nil, nil}
     assert Store.timeline(store, 0.0, 1.0) == {[], 10.0}

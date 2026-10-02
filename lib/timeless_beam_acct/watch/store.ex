@@ -57,11 +57,11 @@ defmodule TimelessBeamAcct.Watch.Store do
   @callback range(t()) :: {{float(), float()} | nil, t()}
 
   @doc """
-  The store at one moment: for each series, its last sample in the
-  `within` seconds up to `at`. A process that had ended by then has none,
-  and is not there.
+  The store at one moment, of the tiers that are wanted: for each series,
+  its last sample in the `within` seconds up to `at`. A process that had
+  ended by then has none, and is not there.
   """
-  @callback at(t(), at :: float(), within :: float()) ::
+  @callback at(t(), at :: float(), within :: float(), tiers :: [Data.tier()]) ::
               {:ok, Data.series()} | {:error, String.t()}
 
   @doc "One series over a stretch of time: `{epoch seconds, value}`."
@@ -113,7 +113,7 @@ defmodule TimelessBeamAcct.Watch.Store do
               {:ok, [job()]} | {:error, String.t()}
 
   for {name, arity} <-
-        [range: 1, at: 3, history: 6, spacing: 2, timeline: 3] ++
+        [range: 1, at: 4, history: 6, spacing: 2, timeline: 3] ++
           [incidents: 4, exits: 3, record: 4, jobs: 4] do
     args = Macro.generate_arguments(arity - 1, __MODULE__)
 

@@ -73,19 +73,22 @@ defmodule TimelessBeamAcct.Watch.Data do
   @group_suffixes ~w(processes work_pct memory_bytes message_queue_len reductions_per_sec exits_per_sec failures_per_sec)
   @proc_suffixes ~w(memory_bytes work_pct message_queue_len reductions)
 
+  @typedoc "A tier of a moment: the node, its groups, its applications, its processes."
+  @type tier :: :vm | :groups | :apps | :processes
+
   @doc """
-  Every metric a moment is read from: what to ask a store for.
+  The metrics a moment is read from: what to ask a store for, of the
+  tiers that are wanted. A view that shows no processes need not ask for
+  theirs, which are most of what a store holds.
   """
-  @spec metrics() :: [String.t()]
-  def metrics do
-    Keyword.values(@vm) ++
-      ["beam_vm_scheduler_util_pct"] ++
-      for(
-        prefix <- ["beam_group", "beam_app"],
-        suffix <- @group_suffixes,
-        do: "#{prefix}_#{suffix}"
-      ) ++
-      for(suffix <- @proc_suffixes, do: "beam_proc_#{suffix}")
+  @spec metrics([tier()]) :: [String.t()]
+  def metrics(tiers \\ [:vm, :groups, :apps, :processes]) do
+    Enum.flat_map(tiers, fn
+      :vm -> Keyword.values(@vm) ++ ["beam_vm_scheduler_util_pct"]
+      :groups -> for suffix <- @group_suffixes, do: "beam_group_" <> suffix
+      :apps -> for suffix <- @group_suffixes, do: "beam_app_" <> suffix
+      :processes -> for suffix <- @proc_suffixes, do: "beam_proc_" <> suffix
+    end)
   end
 
   @doc """

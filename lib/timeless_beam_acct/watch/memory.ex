@@ -20,7 +20,7 @@ defmodule TimelessBeamAcct.Watch.Memory do
   def range(%__MODULE__{} = store), do: {nil, store}
 
   @impl true
-  def at(%__MODULE__{}, _at, _within), do: {:ok, %{}}
+  def at(%__MODULE__{}, _at, _within, _tiers), do: {:ok, %{}}
 
   @impl true
   def history(%__MODULE__{}, _metric, _key, _want, _from, _to), do: []

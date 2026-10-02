@@ -287,8 +287,14 @@ defmodule TimelessBeamAcct.Watch do
     end
   end
 
+  # The tiers a view shows: what is asked of the store for a moment. The
+  # node's own figures are in the header of every view.
+  defp tiers(%State{tab: :groups}), do: [:vm, :groups, :apps]
+  defp tiers(%State{tab: :processes}), do: [:vm, :processes]
+  defp tiers(%State{}), do: [:vm]
+
   defp stored(watch, at) do
-    case Store.at(watch.store, at, watch.within) do
+    case Store.at(watch.store, at, watch.within, tiers(watch.state)) do
       {:ok, series} -> {Data.read(at, series), nil}
       {:error, why} -> {%Data{at: at}, why}
     end

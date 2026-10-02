@@ -276,7 +276,13 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
            end}
         ])
 
-      assert {:ok, series} = Store.at(store(plane, host: ~s(o"hm)), 5000.9, 30.0)
+      assert {:ok, series} =
+               Store.at(store(plane, host: ~s(o"hm)), 5000.9, 30.0, [
+                 :vm,
+                 :groups,
+                 :apps,
+                 :processes
+               ])
 
       assert series == %{
                "beam_vm_run_queue" => [{%{}, 2.0}],
@@ -287,6 +293,16 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
 
       queries = asked(plane, "/api/v1/query")
       assert length(queries) == length(Data.metrics())
+
+      # Of some tiers only, only their metrics are asked for.
+      TestPlane.clear(plane)
+
+      assert {:ok, %{"beam_vm_run_queue" => _} = few} =
+               Store.at(store(plane), 5000.0, 30.0, [:vm])
+
+      refute Map.has_key?(few, "beam_group_processes")
+      assert length(asked(plane, "/api/v1/query")) == length(Data.metrics([:vm]))
+      TestPlane.clear(plane)
       assert Enum.all?(queries, &(&1["time"] == "5000" and &1["lookback_delta"] == "30s"))
 
       names = for %{"query" => query} <- queries, do: query |> String.split("{") |> hd()
@@ -304,11 +320,11 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
            {422, ~s({"error":"query raw frame: work point limit exceeded","status":"error"})}}
         ])
 
-      assert {:error, why} = Store.at(store(plane), 5000.0, 30.0)
+      assert {:error, why} = Store.at(store(plane), 5000.0, 30.0, [:vm])
       assert why =~ "answered 422: query raw frame: work point limit exceeded"
 
       plane = plane([{"/api/v1/query", "not json"}])
-      assert {:error, why} = Store.at(store(plane), 5000.0, 30.0)
+      assert {:error, why} = Store.at(store(plane), 5000.0, 30.0, [:vm])
       assert why =~ "answered what is not the series of a moment"
     end
   end

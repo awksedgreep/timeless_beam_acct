@@ -292,7 +292,7 @@ defmodule TimelessBeamAcct.WatchTest do
       watch = Watch.read_moment(watch)
 
       # Now was not asked of the store.
-      refute_received {:asked, {:at, _, _}}
+      refute_received {:asked, {:at, _, _, _}}
       assert Enum.any?(watch.snapshot.groups, &String.ends_with?(&1.name, ".Collector"))
       assert watch.state.message == nil
 
@@ -322,7 +322,7 @@ defmodule TimelessBeamAcct.WatchTest do
       watch = press(watch, :left)
       at = watch.state.at
       assert at <= last and at > last - 3600
-      assert_received {:asked, {:at, ^at, within}}
+      assert_received {:asked, {:at, ^at, within, [:vm, :groups, :apps]}}
       assert within == 3 * 3600.0
 
       assert Enum.map(watch.snapshot.groups, & &1.name) == [
@@ -348,7 +348,7 @@ defmodule TimelessBeamAcct.WatchTest do
     test "a group is gone into, and stays gone into through time" do
       {:ok, watch} = Watch.new(store: stored(), at: "-10m")
       watch = Watch.read_moment(watch)
-      assert_received {:asked, {:at, _, 30.0}}
+      assert_received {:asked, {:at, _, 30.0, [:vm, :groups, :apps]}}
 
       watch = watch |> press("j") |> press(:enter)
       assert watch.state.within == {:group, "MyApp.Worker"}
@@ -379,7 +379,7 @@ defmodule TimelessBeamAcct.WatchTest do
       {:ok, watch} = Watch.new(store: store)
       watch = Watch.read_moment(watch)
       assert State.live?(watch.state)
-      assert_received {:asked, {:at, ^last, 30.0}}
+      assert_received {:asked, {:at, ^last, 30.0, _tiers}}
       assert watch.snapshot.at == last
       assert watch.state.step == 10.0
       assert length(watch.snapshot.groups) == 3
