@@ -361,8 +361,10 @@ defmodule TimelessBeamAcct.Watch do
       end
 
     # A stretch is drawn a column to so many seconds; a stretch that has
-    # moved by less than a column is the same stretch.
-    column = span / 100
+    # moved by less than a column is the same stretch, and one that has
+    # moved by a column has the same parts in it but one, which the
+    # store has asked about already.
+    column = span / max(watch.columns - 2, 1)
     to = Float.ceil(to / column) * column
     window = {to - span, to}
     ms = System.monotonic_time(:millisecond)

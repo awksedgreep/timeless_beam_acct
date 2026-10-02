@@ -265,10 +265,15 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
         }
       ]
 
+      # A metric at a time, by name: each is answered with its series.
       plane =
         plane([
           {"/api/v1/query",
-           %{"status" => "success", "data" => %{"resultType" => "vector", "result" => result}}}
+           fn %{"query" => query} ->
+             [name | _] = String.split(query, "{")
+             answer = Enum.filter(result, &(&1["metric"]["__name__"] == name))
+             %{"status" => "success", "data" => %{"resultType" => "vector", "result" => answer}}
+           end}
         ])
 
       assert {:ok, series} = Store.at(store(plane, host: ~s(o"hm)), 5000.9, 30.0)
@@ -280,11 +285,16 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
 
       assert %Data{vm: %{run_queue: 2.0}, groups: [%{name: "A"}]} = Data.read(5000.0, series)
 
-      assert [%{"query" => query, "time" => "5000", "lookback_delta" => "30s"}] =
-               asked(plane, "/api/v1/query")
+      queries = asked(plane, "/api/v1/query")
+      assert length(queries) == length(Data.metrics())
+      assert Enum.all?(queries, &(&1["time"] == "5000" and &1["lookback_delta"] == "30s"))
 
-      assert query ==
-               ~S[{__name__=~"beam_(vm|group|app|proc)_.+",node="app@ohm",host="o\"hm"}]
+      names = for %{"query" => query} <- queries, do: query |> String.split("{") |> hd()
+      assert Enum.sort(names) == Enum.sort(Data.metrics())
+
+      assert Enum.all?(queries, fn %{"query" => query} ->
+               String.ends_with?(query, ~S[{node="app@ohm",host="o\"hm"}])
+             end)
     end
 
     test "that the plane will not answer for says what the plane said" do

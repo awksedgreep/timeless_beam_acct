@@ -70,6 +70,24 @@ defmodule TimelessBeamAcct.Watch.Data do
     uptime: "beam_vm_uptime_seconds"
   ]
 
+  @group_suffixes ~w(processes work_pct memory_bytes message_queue_len reductions_per_sec exits_per_sec failures_per_sec)
+  @proc_suffixes ~w(memory_bytes work_pct message_queue_len reductions)
+
+  @doc """
+  Every metric a moment is read from: what to ask a store for.
+  """
+  @spec metrics() :: [String.t()]
+  def metrics do
+    Keyword.values(@vm) ++
+      ["beam_vm_scheduler_util_pct"] ++
+      for(
+        prefix <- ["beam_group", "beam_app"],
+        suffix <- @group_suffixes,
+        do: "#{prefix}_#{suffix}"
+      ) ++
+      for(suffix <- @proc_suffixes, do: "beam_proc_#{suffix}")
+  end
+
   @doc """
   Samples, as the series of each metric. A sample is
   `{metric, labels, value}`, its labels a list of pairs or a map. The

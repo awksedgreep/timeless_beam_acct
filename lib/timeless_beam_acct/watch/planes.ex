@@ -49,8 +49,10 @@ defmodule TimelessBeamAcct.Watch.Planes do
             timeout: 5_000,
             # The first moment held, and when that was found out.
             first: nil,
-            # The most badly ended processes read at once for a timeline.
-            most_incidents: 5000,
+            # The most badly ended processes read at once for a timeline;
+            # the parts of it that lie further back are asked about one
+            # at a time, and kept.
+            most_incidents: 500,
             # What was found out of parts of a timeline the last answers
             # did not reach: `{level, from, to}` to an incident, or nil.
             probed: %{}
@@ -235,32 +237,61 @@ defmodule TimelessBeamAcct.Watch.Planes do
     %{store | first: {first, trunc(last)}}
   end
 
+  # A moment is asked for a metric at a time, by name, and the questions
+  # are asked together. One question for all of them, with a pattern for
+  # the name, costs the plane a walk of its whole catalog
+  # (timeless-libsql #95): a quarter of a second at fifty thousand series,
+  # where a name is a lookup.
+  @at_once 8
+
   @impl true
   def at(%__MODULE__{} = store, at, within) do
-    matchers =
-      [~s[__name__=~"beam_(vm|group|app|proc)_.+"]] ++
-        for({key, value} <- who(store), do: ~s[#{key}="#{escape(value)}"])
+    labels = for {key, value} <- who(store), do: ~s[#{key}="#{escape(value)}"]
 
-    asked =
-      get(store, :metrics, "/api/v1/query",
-        query: "{" <> Enum.join(matchers, ",") <> "}",
-        time: trunc(at),
-        lookback_delta: "#{max(ceil(within), 1)}s"
+    answers =
+      Data.metrics()
+      |> Task.async_stream(
+        fn metric ->
+          get(store, :metrics, "/api/v1/query",
+            query: metric <> "{" <> Enum.join(labels, ",") <> "}",
+            time: trunc(at),
+            lookback_delta: "#{max(ceil(within), 1)}s"
+          )
+        end,
+        max_concurrency: @at_once,
+        timeout: store.timeout + 1000,
+        on_timeout: :kill_task
       )
+      |> Enum.map(fn
+        {:ok, answer} -> answer
+        {:exit, _} -> {:error, "#{store.metrics}: timed out"}
+      end)
 
-    with {:ok, body} <- asked do
-      case JSON.decode(body) do
-        {:ok, %{"status" => "success", "data" => %{"result" => result}}} ->
-          samples =
-            for %{"metric" => %{"__name__" => name} = labels, "value" => [_at, value]} <- result,
-                value = number(value),
-                do: {name, Map.delete(labels, "__name__"), value}
+    case Enum.find(answers, &match?({:error, _}, &1)) do
+      {:error, why} ->
+        {:error, why}
 
-          {:ok, Data.series(samples)}
+      nil ->
+        answers
+        |> Enum.reduce_while({:ok, []}, fn {:ok, body}, {:ok, samples} ->
+          case JSON.decode(body) do
+            {:ok, %{"status" => "success", "data" => %{"result" => result}}} ->
+              more =
+                for %{"metric" => %{"__name__" => name} = labels, "value" => [_at, value]} <-
+                      result,
+                    value = number(value),
+                    do: {name, Map.delete(labels, "__name__"), value}
 
-        _ ->
-          {:error, "#{store.metrics} answered what is not the series of a moment"}
-      end
+              {:cont, {:ok, more ++ samples}}
+
+            _ ->
+              {:halt, {:error, "#{store.metrics} answered what is not the series of a moment"}}
+          end
+        end)
+        |> case do
+          {:ok, samples} -> {:ok, Data.series(samples)}
+          error -> error
+        end
     end
   end
 
