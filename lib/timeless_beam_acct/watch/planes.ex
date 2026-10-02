@@ -689,7 +689,7 @@ defmodule TimelessBeamAcct.Watch.Planes do
       {:ok, status, body} when status in 200..299 ->
         {:ok, body}
 
-      {:ok, status, body} when again and status in [503, 429] ->
+      {:ok, status, _body} when again and status in [503, 429] ->
         Process.sleep(@again_ms)
         get(store, plane, base, path, params, false)
 
