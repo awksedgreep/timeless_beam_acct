@@ -867,6 +867,14 @@ of them ending every second, sent to planes of timeless-libsql 0.8.5.
 index included.** Of the compressed data alone, and without the index,
 it is 95% (20:1), and of samples 97% (30:1).
 
+Those are of timeless-libsql 0.8.5, whose planes compressed each
+reading's chunk by itself and merged nothing. 0.8.6 merges them, and
+six hours of the same node against it stored 5.25M samples in 85 to a
+chunk: **0.9 bytes a sample** of data, **4.4 with its index**, which is
+3.7% of the wire (27:1); and records and spans as before, 45 and 40
+bytes each. All of it together, 6.1% of what was sent: 17:1, where
+0.8.5 was 14:1.
+
 "Each, stored" is of what was compressed and nothing else. "With its
 index" is of every page in use in the file of the plane, which has in it
 the series, the index of their chunks, and the indexes of records and of
