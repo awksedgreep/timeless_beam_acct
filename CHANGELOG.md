@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+A node in a terminal, and what a day of a node did to the planes.
 
 - `mix timeless_beam_acct.watch`: a node in a terminal, now and at any
   moment the planes hold, with the screen and the keys of
@@ -25,6 +27,19 @@
   long each of the things written to keeps it.
 - DESIGN.md has the series of an hour and not of nineteen minutes, and
   what was found of series whose samples have gone: they stay.
+- A collector was left writing to planes set up as the stack sets them
+  for 13.6 hours. The planes of timeless-libsql 0.8.5 compressed each
+  reading's chunk alone and merged nothing: 3.3 million chunks, 2.2 GB,
+  a core, and no answer to a moment (timeless-libsql #93, #94, fixed in
+  0.8.6, whose planes hold the same day in 90,000 chunks and 150 MiB).
+  What the collector costs was measured as the node with it and without
+  it: 4 to 6% of one core, on a node ending 65 processes a second.
+- `watch` asks a moment of the planes a metric at a time, by name, and
+  only for the tiers its view shows: a step back through time is fifteen
+  milliseconds on a store of eighty thousand series, where a pattern for
+  the name cost a quarter of a second (timeless-libsql #95). It asks a
+  busy plane once more before saying so, and marks what went wrong
+  across the whole timeline and not as far back as one answer reaches.
 
 ## 0.1.1
 

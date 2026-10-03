@@ -105,7 +105,7 @@ defmodule TimelessBeamAcct.Watch.RealPlanesTest do
 
     series =
       eventually(
-        fn -> store |> Store.at(last, 30.0) |> elem(1) end,
+        fn -> store |> Store.at(last, 30.0, [:vm, :groups, :apps, :processes]) |> elem(1) end,
         &(is_map(&1) and is_map_key(&1, "beam_group_work_pct"))
       )
 
