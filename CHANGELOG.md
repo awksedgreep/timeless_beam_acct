@@ -56,6 +56,10 @@
   as it is: from timeless_phoenix 2.0.4 it has the page among its own.
   Run in both orders with timeless_phoenix's installer against a new
   `mix phx.new` application, the page was in the menu of each.
+- A collector started from the configuration (`start: true`) no longer
+  takes `:dashboard`, the page's, for an option of its own. The
+  installer writes both in an application with LiveDashboard, and the
+  application would not start.
 - A recording whose node ended before it did is opened where what it
   wrote ends, and not at the time it was to stop, where there was
   nothing to see.

@@ -53,6 +53,24 @@ defmodule TimelessBeamAcct.ApplicationTest do
     assert_receive {:timeless_beam_acct, :close}
   end
 
+  test "the page's configuration beside a collector's is not taken for an option of it" do
+    Process.register(self(), :application_test_page)
+
+    # As the installer writes it, in an application with LiveDashboard.
+    Application.put_all_env(
+      timeless_beam_acct: [
+        start: true,
+        sink: {:forward, to: :application_test_page},
+        interval: 3600,
+        process_interval: 3600,
+        dashboard: [logs_url: "http://127.0.0.1:1"]
+      ]
+    )
+
+    {:ok, _} = Application.ensure_all_started(:timeless_beam_acct)
+    assert TimelessBeamAcct.running?()
+  end
+
   test "a collector that was started with the application can be stopped, and stays stopped" do
     Process.register(self(), :application_test_stop)
 

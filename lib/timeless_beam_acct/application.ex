@@ -12,7 +12,9 @@ defmodule TimelessBeamAcct.Application do
         sink: :http,
         metrics_url: "http://127.0.0.1:8428"
 
-  Everything beside `:start` is an option of `TimelessBeamAcct.Options`.
+  Everything beside `:start` is an option of `TimelessBeamAcct.Options`,
+  but for `:dashboard`, which is the LiveDashboard page's: where it reads
+  the planes.
   A collector can as well be started where the application's own
   processes are, as `{TimelessBeamAcct, options}` among the children of a
   supervisor.
@@ -20,13 +22,16 @@ defmodule TimelessBeamAcct.Application do
 
   use Application
 
+  # Configuration of the application that is not the collector's.
+  @not_options [:start, :dashboard]
+
   @impl true
   def start(_type, _args) do
     env = Application.get_all_env(:timeless_beam_acct)
 
     children =
       if Keyword.get(env, :start, false),
-        do: [{TimelessBeamAcct, Keyword.delete(env, :start)}],
+        do: [{TimelessBeamAcct, Keyword.drop(env, @not_options)}],
         else: []
 
     Supervisor.start_link(children,
