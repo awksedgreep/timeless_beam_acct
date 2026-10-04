@@ -298,13 +298,13 @@ collector that ends.
 
 Depends on nothing.
 
-- [ ] **B1 — The optional dependencies.** (S) `phoenix_live_dashboard
+- [x] **B1 — The optional dependencies.** (S) `phoenix_live_dashboard
   ~> 0.8` and `phoenix_live_view ~> 1.0`, `optional: true`.
   `TimelessBeamAcct.Dashboard.Page`, compiled only where LiveDashboard
   is, with the recordings and an opened recording as its two states, and
   the menu link (D8). `Remote.modules/0` leaves it out. The suite is run
   with and without the two, so that neither breaks the other.
-- [ ] **B2 — The router macro.** (S) As `timeless_traces_dashboard/2`
+- [x] **B2 — The router macro.** (S) As `timeless_traces_dashboard/2`
   (L7).
 - [ ] **B3 — The install task learns Phoenix.** (S) `mix
   timeless_beam_acct.install` finds a router with `live_dashboard` in it
@@ -328,9 +328,9 @@ Depends on A1–A3, A5, B1–B4.
   the two options, what it will cost (A5), and when it will end.
   Confirmed, it starts a collector in the node chosen, with
   `TimelessBeamAcct.Remote` if the node has none of the modules.
-- [ ] **C2 — The banner.** (S) A recording that is running, on every
+- [~] **C2 — The banner.** (S) A recording that is running, on every
   view of the page: its node, how far along, **Stop**, and **+1 hour**.
-- [ ] **C3 — The list.** (S) The recordings of the store (A3), the last
+- [~] **C3 — The list.** (S) The recordings of the store (A3), the last
   first, with their size from the planes' own counts.
 - [ ] **C4 — What the page says where it cannot record.** (S) A node it
   cannot reach, a node with a collector that was not started as a

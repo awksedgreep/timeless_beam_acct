@@ -262,8 +262,8 @@ defmodule TimelessBeamAcct.Remote do
   @doc """
   The modules of a collector: what is sent to a node.
 
-  The tasks are not, and nor is what draws a node in a terminal: they run
-  where they are typed.
+  The tasks are not, nor what draws a node in a terminal or a dashboard:
+  they run where they are typed, or where the dashboard is.
   """
   @spec modules() :: [module()]
   def modules do
@@ -272,6 +272,7 @@ defmodule TimelessBeamAcct.Remote do
     for module <- Application.spec(:timeless_beam_acct, :modules) || [],
         not match?("Elixir.Mix.Tasks." <> _, Atom.to_string(module)),
         not match?("Elixir.TimelessBeamAcct.Watch" <> _, Atom.to_string(module)),
+        not match?("Elixir.TimelessBeamAcct.Dashboard" <> _, Atom.to_string(module)),
         do: module
   end
 

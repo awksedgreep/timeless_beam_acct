@@ -17,6 +17,12 @@
   running node; `--extend` and `--stop` while it runs. `mix
   timeless_beam_acct.recordings` lists the recordings in a logs plane,
   and `mix timeless_beam_acct.watch --recording ID` opens one.
+- A page in Phoenix LiveDashboard, `TimelessBeamAcct.Dashboard.Page`,
+  with `timeless_beam_acct_dashboard "/dashboard"` for the router: the
+  recording running in the chosen node, with **Stop** and **+1 hour**,
+  and the recordings of the logs plane. `phoenix_live_dashboard` and
+  `phoenix_live_view` are optional dependencies, and the page is
+  compiled only where they are.
 
 ## 0.2.0
 

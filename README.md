@@ -248,6 +248,36 @@ It writes a record when it begins and one when it ends, `kind`
 `recordings` lists, and what `watch --recording` opens: the node it was
 of, at its end, with the timeline long enough to have all of it.
 
+### In LiveDashboard
+
+An application with Phoenix LiveDashboard has a page of recordings: the
+one running in the node chosen at the top of the dashboard, with how far
+along it is, **Stop**, and **+1 hour**; and the recordings the logs plane
+has, with how each ended.
+
+```elixir
+# router.ex
+import TimelessBeamAcct.Dashboard.Router
+
+scope "/" do
+  pipe_through :browser
+  timeless_beam_acct_dashboard "/dashboard"
+end
+
+# config/config.exs: the planes the recordings were written to
+config :timeless_beam_acct, :dashboard,
+  metrics_url: "http://127.0.0.1:8428",
+  logs_url: "http://127.0.0.1:9428",
+  traces_url: "http://127.0.0.1:10428"
+```
+
+or `additional_pages: [beam: TimelessBeamAcct.Dashboard.Page]` beside a
+`live_dashboard` that is there already. The page is compiled only in an
+application that has `phoenix_live_dashboard`: they are optional
+dependencies of this one, and an application without them fetches
+neither. Starting a recording from the page, and going through one there
+as `watch` does, are next (docs/DASHBOARD_PLAN.md).
+
 ### To the canvas
 
 The canvas reads from the Timeless planes. Point the collector at them:

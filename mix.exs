@@ -43,6 +43,10 @@ defmodule TimelessBeamAcct.MixProject do
       # dependencies when it runs, which is what lets it be sent to a node
       # that is already running.
       {:igniter, "~> 0.6", optional: true},
+      # For the page in LiveDashboard, which is compiled only where these
+      # are: an application without Phoenix fetches neither.
+      {:phoenix_live_dashboard, "~> 0.8", optional: true},
+      {:phoenix_live_view, "~> 1.0", optional: true},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
