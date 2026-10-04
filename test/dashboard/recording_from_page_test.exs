@@ -92,6 +92,24 @@ defmodule TimelessBeamAcct.Dashboard.RecordingFromPageTest do
     assert TimelessBeamAcct.running?()
   end
 
+  test "the application's longest recording holds on the page, extended or not" do
+    Application.put_env(:timeless_beam_acct, :max_recording, "2h")
+    on_exit(fn -> Application.delete_env(:timeless_beam_acct, :max_recording) end)
+
+    {:noreply, socket} = Page.handle_event("record", %{"length" => "4h"}, socket())
+    assert socket.assigns.said =~ "at most"
+
+    {:noreply, socket} = Page.handle_event("record", %{"length" => "1h"}, socket)
+    assert socket.assigns.said == "Recording."
+    # Told to the node recorded, and not left to what it would say itself.
+    assert TimelessBeamAcct.status().options.max_recording == 7200.0
+
+    {:noreply, socket} = Page.handle_event("extend", %{"by" => "1h"}, socket)
+    assert socket.assigns.said =~ "It now ends at"
+    {:noreply, socket} = Page.handle_event("extend", %{"by" => "1h"}, socket)
+    assert socket.assigns.said =~ "at most"
+  end
+
   test "what is not a length is refused, and nothing is started" do
     {:noreply, socket} =
       Page.handle_event("record", %{"length" => "other", "other" => "soon"}, socket())

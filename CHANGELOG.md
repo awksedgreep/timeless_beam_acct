@@ -42,6 +42,17 @@
   From the planes' own counts (`TimelessBeamAcct.Watch.Planes.storage/1`). `phoenix_live_dashboard` and
   `phoenix_live_view` are optional dependencies, and the page is
   compiled only where they are.
+- The README says the three ways the page is added to a Phoenix
+  application, where the planes are said at runtime, and how it is kept
+  to those who should have it: dev only, basic auth, or the
+  application's own users through `on_mount`; a shorter
+  `:max_recording`; tokens for the planes.
+- The page tells the node it records the application's
+  `:max_recording`. A recording in another node could be made longer up
+  to that node's own most, a day, past what the application allowed.
+- A recording whose node ended before it did is opened where what it
+  wrote ends, and not at the time it was to stop, where there was
+  nothing to see.
 
 ## 0.2.0
 

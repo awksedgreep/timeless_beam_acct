@@ -262,27 +262,171 @@ one running in the node chosen at the top of the dashboard, with how far
 along it is, **Stop**, and **+1 hour**; and the recordings the logs plane
 has, with how each ended.
 
+The page is compiled only in an application that has
+`phoenix_live_dashboard`: it and `phoenix_live_view` are optional
+dependencies of this one, and an application without them fetches
+neither. The application needs no collector of its own for the page: a
+recording started from the page starts one, and it is gone when the
+recording ends.
+
+#### Adding the page
+
 ```elixir
-# router.ex
+# mix.exs
+{:timeless_beam_acct, github: "awksedgreep/timeless_beam_acct"}
+```
+
+Then one of three, in the router.
+
+**Beside the dashboard the application has already.** An application
+made by `mix phx.new` has one, at `/dev/dashboard`; the page is one more
+of its pages:
+
+```elixir
+live_dashboard "/dashboard",
+  metrics: MyAppWeb.Telemetry,
+  additional_pages: [beam: TimelessBeamAcct.Dashboard.Page]
+```
+
+**A dashboard of its own**, with the page in it, in one line:
+
+```elixir
 import TimelessBeamAcct.Dashboard.Router
 
 scope "/" do
   pipe_through :browser
-  timeless_beam_acct_dashboard "/dashboard"
+  timeless_beam_acct_dashboard "/beam"
 end
-
-# config/config.exs: the planes the recordings were written to
-config :timeless_beam_acct, :dashboard,
-  metrics_url: "http://127.0.0.1:8428",
-  logs_url: "http://127.0.0.1:9428",
-  traces_url: "http://127.0.0.1:10428"
 ```
 
-or `additional_pages: [beam: TimelessBeamAcct.Dashboard.Page]` beside a
-`live_dashboard` that is there already. The page is compiled only in an
-application that has `phoenix_live_dashboard`: they are optional
-dependencies of this one, and an application without them fetches
-neither.
+**A dashboard of its own, with LiveDashboard's options.** What is
+given as `:live_dashboard` is given to `live_dashboard`: the
+application's metrics, `on_mount` (in [Securing it](#securing-it)),
+`csp_nonce_assign_key`, and the rest:
+
+```elixir
+timeless_beam_acct_dashboard "/beam",
+  live_dashboard: [metrics: MyAppWeb.Telemetry, ecto_repos: [MyApp.Repo]]
+```
+
+The page is under `beam` in each: `/dashboard/beam`, `/beam/beam`.
+`mix timeless_beam_acct.install` does not add it yet; it is added by
+hand.
+
+#### Where the planes are
+
+The page lists recordings and reads them from the planes, and a
+recording it starts writes to them. It is told where they are in the
+configuration, which is read when the page is, so `runtime.exs` will
+do:
+
+```elixir
+# config/runtime.exs
+config :timeless_beam_acct, :dashboard,
+  metrics_url: System.get_env("TIMELESS_METRICS_URL", "http://127.0.0.1:8428"),
+  logs_url: System.get_env("TIMELESS_LOGS_URL", "http://127.0.0.1:9428"),
+  traces_url: System.get_env("TIMELESS_TRACES_URL", "http://127.0.0.1:10428"),
+  # for planes started with TIMELESS_AUTH_MODE=required; or one each,
+  # as metrics_token:, logs_token:, traces_token:
+  token: System.get_env("TIMELESS_TOKEN")
+```
+
+Without `:dashboard` configured the page says so, and lists nothing.
+
+#### Securing it
+
+What someone who can open the page can do:
+
+- **Record any node the dashboard can choose**, which is every node
+  connected to this one: start a recording of up to a day, make one
+  longer, and stop one. A recording asks the VM for word of every process
+  that starts and ends, and costs the node a little of a core while it
+  runs ([Cost](#cost)).
+- **Read what was recorded**: process and group names, registered names,
+  applications, and how each process ended, the reason written out. A
+  reason can carry what a process had in hand when it failed: the value
+  of a `badmatch`, say.
+
+The page has no switch of its own that makes it read-only; who can reach
+it is the router's to say, as it is for the rest of LiveDashboard,
+which can kill processes. The ways, from least to most:
+
+**Only while developing.** `mix phx.new` puts the dashboard in a scope
+that is compiled only in dev, which is where the page is safest:
+
+```elixir
+if Application.compile_env(:my_app, :dev_routes) do
+  import Phoenix.LiveDashboard.Router
+
+  scope "/dev" do
+    pipe_through :browser
+
+    live_dashboard "/dashboard",
+      metrics: MyAppWeb.Telemetry,
+      additional_pages: [beam: TimelessBeamAcct.Dashboard.Page]
+  end
+end
+```
+
+**In production, behind a password.** A pipeline with HTTP basic auth,
+the password from the environment, in its own scope, out of the dev
+one:
+
+```elixir
+pipeline :admins_only do
+  plug :admin_basic_auth
+end
+
+scope "/admin" do
+  pipe_through [:browser, :admins_only]
+  timeless_beam_acct_dashboard "/beam"
+end
+
+defp admin_basic_auth(conn, _opts) do
+  Plug.BasicAuth.basic_auth(conn,
+    username: System.fetch_env!("ADMIN_USER"),
+    password: System.fetch_env!("ADMIN_PASSWORD")
+  )
+end
+```
+
+Only over HTTPS: basic auth sends the password with every request.
+
+**In production, behind the application's own users.** An application
+with `mix phx.gen.auth` has a plug for the request and a hook for the
+LiveView; both are needed, the plug for the first page and the hook for
+the socket after it. A role or a list of who may is the application's
+to check, in a hook of its own:
+
+```elixir
+scope "/admin" do
+  pipe_through [:browser, :require_authenticated_user]
+
+  timeless_beam_acct_dashboard "/beam",
+    live_dashboard: [on_mount: [{MyAppWeb.UserAuth, :require_admin}]]
+end
+```
+
+Then, whichever of these:
+
+- **A shorter longest recording.** A day is the most unless the
+  application says less, and what it says is what the page holds to, for
+  a recording it starts and for one it makes longer, in whichever node:
+
+  ```elixir
+  # config/runtime.exs
+  config :timeless_beam_acct, max_recording: "4h"
+  ```
+
+- **Planes that ask for a token.** Planes started with
+  `TIMELESS_AUTH_MODE=required` answer only a request with a token,
+  which the page is given as above, and a recording it starts is given
+  in turn. A collector configured outside the page is given its own
+  (`token:` among its options).
+- **The nodes it can reach.** The nodes the page can record are those
+  connected to the one it runs in: what the cookie lets in. A node that
+  should not be recorded from this dashboard is one it does not connect
+  to.
 
 A recording is started from the page too: how long, now or at a time,
 and what of it to keep. And a recording is opened from the list, as

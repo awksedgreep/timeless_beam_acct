@@ -158,6 +158,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
         [name: name, stop_after: length, recorded_by: "LiveDashboard on #{node()}", sink: :http] ++
           start_at ++
           Keyword.take(configured(), @plane_keys) ++
+          most() ++
           if(params["processes"] == "true", do: [], else: [max_processes: 0]) ++
           if(params["failed_only"] == "true", do: [records: :abnormal], else: [])
 
@@ -277,6 +278,16 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     end
 
     defp configured, do: Application.get_env(:timeless_beam_acct, :dashboard, [])
+
+    # The longest a recording may be, as this application says: told to
+    # the node recorded, which would otherwise keep its own, and let a
+    # recording be extended past this one's.
+    defp most do
+      case Application.get_env(:timeless_beam_acct, :max_recording) do
+        nil -> []
+        most -> [max_recording: most]
+      end
+    end
 
     defp planes do
       case configured() do
