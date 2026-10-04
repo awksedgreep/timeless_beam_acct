@@ -26,7 +26,7 @@ defmodule TimelessBeamAcct.Watch.Planes do
 
   @behaviour TimelessBeamAcct.Watch.Store
 
-  alias TimelessBeamAcct.{Http, Span}
+  alias TimelessBeamAcct.{Http, Human, Span}
   alias TimelessBeamAcct.Watch.{Data, Store}
 
   @type t :: %__MODULE__{
@@ -478,6 +478,95 @@ defmodule TimelessBeamAcct.Watch.Planes do
           do: incident
 
     {Enum.sort_by(found ++ marked, & &1.at), %{store | probed: kept}}
+  end
+
+  @typedoc """
+  What a plane holds, and how small it holds it: `items` stored, `raw`
+  bytes as the plane counts them before they are compressed, `data` bytes
+  of what was compressed, and `disk` bytes of every page in use in its
+  file, the indexes with it.
+  """
+  @type storage :: %{
+          signal: :samples | :records | :spans,
+          items: non_neg_integer(),
+          raw: non_neg_integer(),
+          data: non_neg_integer(),
+          disk: non_neg_integer(),
+          detail: String.t()
+        }
+
+  @doc """
+  What each of the three planes holds and how small: of the whole store,
+  and not of one recording. A plane that does not answer is left out.
+  """
+  @spec storage(t()) :: [storage()]
+  def storage(%__MODULE__{} = store) do
+    [
+      {:metrics, "/select/metrics/stats"},
+      {:logs, "/select/logsql/stats"},
+      {:traces, "/select/traces/stats"}
+    ]
+    |> Task.async_stream(
+      fn {plane, path} ->
+        with {:ok, body} <- get(store, plane, path, []),
+             {:ok, %{} = stats} <- JSON.decode(body) do
+          storage_of(plane, stats)
+        else
+          _ -> nil
+        end
+      end,
+      timeout: store.timeout + 1000,
+      on_timeout: :kill_task
+    )
+    |> Enum.flat_map(fn
+      {:ok, %{} = storage} -> [storage]
+      _ -> []
+    end)
+  end
+
+  defp in_use(stats),
+    do: max((stats["sqlite_page_bytes"] || 0) - (stats["freelist_bytes"] || 0), 0)
+
+  # A sample is sixteen bytes before it is compressed: its time and its
+  # value. Records and spans are as the planes count what they were sent.
+  defp storage_of(:metrics, stats) do
+    points = stats["total_points"] || 0
+    chunks = stats["raw_tier_chunks"] || 0
+
+    %{
+      signal: :samples,
+      items: points,
+      raw: points * 16,
+      data: stats["bytes_on_disk"] || 0,
+      disk: in_use(stats),
+      detail:
+        "#{Human.count(stats["series"] || 0)} series · " <>
+          "#{if chunks > 0, do: round(points / chunks), else: 0} samples to a chunk"
+    }
+  end
+
+  defp storage_of(:logs, stats) do
+    %{
+      signal: :records,
+      items: stats["total_entries"] || 0,
+      raw: stats["raw_ingested_bytes_total"] || 0,
+      data: stats["total_bytes"] || 0,
+      disk: in_use(stats),
+      detail:
+        "#{stats["compressed_blocks"] || 0} blocks compressed, #{stats["raw_blocks"] || 0} not yet"
+    }
+  end
+
+  defp storage_of(:traces, stats) do
+    %{
+      signal: :spans,
+      items: stats["total_spans"] || 0,
+      raw: stats["raw_ingested_bytes_total"] || 0,
+      data: stats["bytes_on_disk"] || 0,
+      disk: in_use(stats),
+      detail:
+        "#{stats["compressed_blocks"] || 0} blocks compressed, #{stats["raw_blocks"] || 0} not yet"
+    }
   end
 
   @impl true

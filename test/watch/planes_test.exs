@@ -578,6 +578,39 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     end
   end
 
+  describe "storage" do
+    test "is what each plane says it holds, and how small" do
+      plane =
+        plane([
+          {"/select/metrics/stats",
+           %{
+             "total_points" => 1000,
+             "raw_tier_chunks" => 10,
+             "series" => 5,
+             "bytes_on_disk" => 900,
+             "sqlite_page_bytes" => 8192,
+             "freelist_bytes" => 4096
+           }},
+          {"/select/logsql/stats",
+           %{
+             "total_entries" => 50,
+             "raw_ingested_bytes_total" => 22_500,
+             "total_bytes" => 2200,
+             "sqlite_page_bytes" => 4096,
+             "freelist_bytes" => 0,
+             "compressed_blocks" => 1,
+             "raw_blocks" => 0
+           }}
+          # The traces plane does not answer, and is left out.
+        ])
+
+      assert [samples, records] = Planes.storage(store(plane))
+      assert %{signal: :samples, items: 1000, raw: 16_000, data: 900, disk: 4096} = samples
+      assert samples.detail == "5 series · 100 samples to a chunk"
+      assert %{signal: :records, items: 50, raw: 22_500, data: 2200, disk: 4096} = records
+    end
+  end
+
   describe "a trend" do
     test "of a long stretch is the highest of each part, of a short one the samples" do
       plane =

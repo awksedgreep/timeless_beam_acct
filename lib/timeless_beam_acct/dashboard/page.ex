@@ -207,6 +207,12 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           _ -> {nil, false, nil}
         end
 
+      storage =
+        case planes() do
+          {:ok, planes} -> Planes.storage(planes)
+          _ -> []
+        end
+
       {recordings, error} =
         case planes() do
           nil ->
@@ -228,6 +234,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       assign(socket,
         links: Map.new(recordings, &{&1.id, "?" <> URI.encode_query(recording: &1.id)}),
         node: node,
+        storage: storage,
         now: now,
         running: running,
         collecting: collecting,
@@ -432,9 +439,90 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
             </tbody>
           </table>
         </div>
+
+        <.storage :if={@storage != []} storage={@storage} />
       </div>
       """
     end
+
+    attr(:storage, :list, required: true)
+
+    # What the planes hold, and how small they hold it.
+    defp storage(assigns) do
+      totals =
+        Enum.reduce(assigns.storage, %{raw: 0, disk: 0}, fn s, t ->
+          %{raw: t.raw + s.raw, disk: t.disk + s.disk}
+        end)
+
+      assigns = assign(assigns, totals: totals)
+
+      ~H"""
+      <div class="card mt-4">
+        <div class="card-header d-flex justify-content-between">
+          <span>Storage</span>
+          <small class="text-muted">all the planes hold, not one recording</small>
+        </div>
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th></th>
+              <th class="text-right">Stored</th>
+              <th class="text-right">Raw</th>
+              <th class="text-right">Compressed</th>
+              <th class="text-right">Each</th>
+              <th class="text-right">With indexes</th>
+              <th class="text-right">Each</th>
+              <th class="text-right">Smaller by</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr :for={s <- @storage}>
+              <td>{signal(s.signal)}</td>
+              <td class="text-right">{Human.count(s.items)}</td>
+              <td class="text-right">{Human.bytes(s.raw)}</td>
+              <td class="text-right">{Human.bytes(s.data)}</td>
+              <td class="text-right">{each(s.data, s.items)}</td>
+              <td class="text-right">{Human.bytes(s.disk)}</td>
+              <td class="text-right">{each(s.disk, s.items)}</td>
+              <td class="text-right"><strong>{smaller(s.raw, s.disk)}</strong></td>
+              <td class="text-muted small">{s.detail}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><strong>All of it</strong></td>
+              <td></td>
+              <td class="text-right">{Human.bytes(@totals.raw)}</td>
+              <td></td>
+              <td></td>
+              <td class="text-right">{Human.bytes(@totals.disk)}</td>
+              <td></td>
+              <td class="text-right"><strong>{smaller(@totals.raw, @totals.disk)}</strong></td>
+              <td class="text-muted small">raw is as the planes count it before compressing</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      """
+    end
+
+    defp signal(:samples), do: "Samples"
+    defp signal(:records), do: "Exit records"
+    defp signal(:spans), do: "Spans"
+
+    defp each(_bytes, 0), do: "–"
+
+    defp each(bytes, items) do
+      per = bytes / items
+      if per < 10, do: Human.fixed(per, 2) <> " B", else: Human.fixed(per, 1) <> " B"
+    end
+
+    # As a share saved, and as a ratio: 93% (14:1).
+    defp smaller(raw, disk) when raw > 0 and disk > 0,
+      do: "#{round(100 * (1 - disk / raw))}% (#{round(raw / disk)}:1)"
+
+    defp smaller(_raw, _disk), do: "–"
 
     # What the page draws with, beside LiveDashboard's own.
     defp styles(assigns) do

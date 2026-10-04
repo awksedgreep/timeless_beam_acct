@@ -290,7 +290,9 @@ and what of it to keep. And a recording is opened from the list, as
 the groups, processes, jobs, and exits as of the moment picked, with
 `watch`'s keys; and three views a page has room for that a terminal has
 not, `5` to `7`: the node over the whole timeline, a figure to a line,
-what the VM remarked on, and what the collector said of itself. What is
+what the VM remarked on, and what the collector said of itself. Under
+the list of recordings, what the planes hold and how small: samples,
+records, and spans, raw, compressed, and with their indexes. What is
 read and what a key does are `watch`'s own, so
 the two do not come to differ. The link has the recording in it, and
 can be sent to someone.

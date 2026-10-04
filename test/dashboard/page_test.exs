@@ -16,6 +16,7 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
       collecting: false,
       waiting: nil,
       links: %{},
+      storage: [],
       estimate: nil,
       recordings: [],
       error: nil
@@ -135,6 +136,36 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     assert html =~ "its node ended first"
     assert html =~ ~r/>\s*bbbbbbbb\s*</
     refute html =~ "No recordings"
+  end
+
+  test "what the planes hold, and how small" do
+    storage = [
+      %{
+        signal: :samples,
+        items: 5_000_000,
+        raw: 80_000_000,
+        data: 4_000_000,
+        disk: 20_000_000,
+        detail: "20k series"
+      },
+      %{
+        signal: :records,
+        items: 1_000_000,
+        raw: 455_000_000,
+        data: 44_000_000,
+        disk: 45_000_000,
+        detail: "9 blocks"
+      }
+    ]
+
+    html = page(storage: storage)
+    assert html =~ "Storage"
+    assert html =~ "Exit records"
+    # 80 MB raw into 20 MB with the indexes: 75% smaller, 4:1.
+    assert html =~ "75% (4:1)"
+    assert html =~ "4.00 B"
+    assert html =~ "All of it"
+    refute page([]) =~ "Exit records"
   end
 
   test "what could not be read, and what was done, are said" do

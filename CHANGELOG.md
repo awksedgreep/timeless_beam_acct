@@ -34,7 +34,10 @@
   plane, each opened as `watch` opens one: the timeline across the top,
   clicked to go to a moment, the four views, and `watch`'s keys; and
   three of the page's own, `5` to `7`: the node over the timeline, what
-  the VM remarked on, and what the collector said of itself. `phoenix_live_dashboard` and
+  the VM remarked on, and what the collector said of itself. And a
+  Storage card: what each plane holds, raw, compressed, and with its
+  indexes, a byte figure for each item, and how much smaller it is, from
+  the planes' own counts (`TimelessBeamAcct.Watch.Planes.storage/1`). `phoenix_live_dashboard` and
   `phoenix_live_view` are optional dependencies, and the page is
   compiled only where they are.
 
