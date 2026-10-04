@@ -42,10 +42,15 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     refute html =~ "No recording is running"
   end
 
-  test "with none running, it says how to start one" do
+  test "with none running, a recording can be started" do
     html = page([])
-    assert html =~ "No recording is running in app@ohm"
-    assert html =~ "mix timeless_beam_acct.record app@ohm --for 1h"
+    assert html =~ "Record app@ohm"
+    assert html =~ ~s(phx-submit="record")
+    for {value, _} <- Page.lengths(), do: assert(html =~ ~s(value="#{value}"))
+    assert html =~ ~s(name="other")
+    assert html =~ "a day at most"
+    # Not where a collector is running already.
+    refute page(collecting: true) =~ ~s(phx-submit="record")
     assert html =~ "No recordings in the last 31 days."
   end
 

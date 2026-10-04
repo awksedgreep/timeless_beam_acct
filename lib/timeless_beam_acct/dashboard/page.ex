@@ -24,8 +24,12 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     use Phoenix.LiveDashboard.PageBuilder, refresher?: true
 
-    alias TimelessBeamAcct.{Clock, Human}
+    alias TimelessBeamAcct.{Clock, Human, Remote}
     alias TimelessBeamAcct.Watch.{Live, Planes, Store}
+
+    @lengths [{"15m", "15 minutes"}, {"1h", "1 hour"}, {"4h", "4 hours"}, {"8h", "8 hours"}]
+    @plane_keys [:metrics_url, :logs_url, :traces_url, :token, :metrics_token, :logs_token] ++
+                  [:traces_token]
 
     # How far back the recordings are listed.
     @listed 31 * 86_400.0
@@ -42,6 +46,32 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     def handle_refresh(socket), do: {:noreply, read(socket)}
 
     @impl true
+    def handle_event("record", params, socket) do
+      length = if params["length"] == "other", do: params["other"], else: params["length"]
+
+      opts =
+        [stop_after: length, recorded_by: "LiveDashboard on #{node()}", sink: :http] ++
+          Keyword.take(configured(), @plane_keys) ++
+          if(params["processes"] == "true", do: [], else: [max_processes: 0]) ++
+          if(params["failed_only"] == "true", do: [records: :abnormal], else: [])
+
+      # Into the node chosen; and into this one as into another, so that
+      # it outlives the page that started it.
+      started =
+        case socket.assigns.page.node do
+          here when here == node() -> Remote.start_guest(opts)
+          there -> Remote.attach(there, opts)
+        end
+
+      said =
+        case started do
+          {:ok, _} -> "Recording."
+          {:error, why} -> "It could not be started: #{why}"
+        end
+
+      {:noreply, socket |> assign(said: said) |> read()}
+    end
+
     def handle_event("stop", _params, socket) do
       said =
         case call(socket, TimelessBeamAcct, :stop, []) do
@@ -103,17 +133,17 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       )
     end
 
-    defp planes do
-      case Application.get_env(:timeless_beam_acct, :dashboard, []) do
-        [] ->
-          nil
+    defp configured, do: Application.get_env(:timeless_beam_acct, :dashboard, [])
 
-        configured ->
-          Planes.new(
-            Keyword.take(configured, [:metrics_url, :logs_url, :traces_url, :token, :logs_token])
-          )
+    defp planes do
+      case configured() do
+        [] -> nil
+        configured -> Planes.new(Keyword.take(configured, @plane_keys))
       end
     end
+
+    @doc false
+    def lengths, do: @lengths
 
     defp call(socket, module, function, args) do
       {:ok, :erpc.call(socket.assigns.page.node, module, function, args, 30_000)}
@@ -152,10 +182,34 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           stopped. It was started in code or by <code>attach</code>, without <code>stop_after</code>.
         </p>
 
-        <p :if={!@running and !@collecting}>
-          No recording is running in {@node}. From a terminal:
-          <code>mix timeless_beam_acct.record {@node} --for 1h</code>
-        </p>
+        <form :if={!@running and !@collecting} phx-submit="record" class="tba-banner">
+          <strong>Record {@node}</strong>
+          <div>
+            for
+            <label :for={{value, label} <- lengths()}>
+              <input type="radio" name="length" value={value} checked={value == "1h"} /> {label}
+            </label>
+            <label><input type="radio" name="length" value="other" /></label>
+            <input type="text" name="other" placeholder="90m" size="5" />
+          </div>
+          <div>
+            <label>
+              <input type="checkbox" name="processes" value="true" checked />
+              a series for each notable process (more to look at, more to store)
+            </label>
+          </div>
+          <div>
+            <label>
+              <input type="checkbox" name="failed_only" value="true" />
+              a record only of processes that failed (less to store on a busy node)
+            </label>
+          </div>
+          <p>
+            A recording costs a node about 5% of one core where 65 processes end a second, and
+            less where fewer do. It ends by itself; a day at most.
+          </p>
+          <button type="submit" data-confirm={"Record #{@node}?"}>Record</button>
+        </form>
 
         <div :if={@error} class="tba-error">{@error}</div>
 

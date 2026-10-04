@@ -324,13 +324,13 @@ Depends on nothing.
 
 Depends on A1–A3, A5, B1–B4.
 
-- [ ] **C1 — Record…** (M) The form of section 6: node, length, start,
+- [~] **C1 — Record…** (M) The form of section 6: node, length, start,
   the two options, what it will cost (A5), and when it will end.
   Confirmed, it starts a collector in the node chosen, with
   `TimelessBeamAcct.Remote` if the node has none of the modules.
-- [~] **C2 — The banner.** (S) A recording that is running, on every
+- [x] **C2 — The banner.** (S) A recording that is running, on every
   view of the page: its node, how far along, **Stop**, and **+1 hour**.
-- [~] **C3 — The list.** (S) The recordings of the store (A3), the last
+- [x] **C3 — The list.** (S) The recordings of the store (A3), the last
   first, with their size from the planes' own counts.
 - [ ] **C4 — What the page says where it cannot record.** (S) A node it
   cannot reach, a node with a collector that was not started as a

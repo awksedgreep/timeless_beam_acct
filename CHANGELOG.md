@@ -20,7 +20,7 @@
 - A page in Phoenix LiveDashboard, `TimelessBeamAcct.Dashboard.Page`,
   with `timeless_beam_acct_dashboard "/dashboard"` for the router: the
   recording running in the chosen node, with **Stop** and **+1 hour**,
-  and the recordings of the logs plane. `phoenix_live_dashboard` and
+  or a form to start one; and the recordings of the logs plane. `phoenix_live_dashboard` and
   `phoenix_live_view` are optional dependencies, and the page is
   compiled only where they are.
 
