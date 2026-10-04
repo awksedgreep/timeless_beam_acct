@@ -513,10 +513,14 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
               <td></td>
               <td class="text-right"><strong>{smaller(@totals.raw, @totals.data)}</strong></td>
               <td class="text-right text-muted">{Human.bytes(@totals.disk)}</td>
-              <td class="text-muted small">raw, as the planes count it, against what it was compressed to</td>
+              <td></td>
             </tr>
           </tfoot>
         </table>
+        <p class="text-muted small mb-0 mt-2">
+          Compression is of raw, as the planes count it, against what it was compressed to;
+          indexes are on disk beside it, and not in it.
+        </p>
       </div>
       """
     end

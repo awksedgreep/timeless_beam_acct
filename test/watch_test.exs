@@ -407,6 +407,73 @@ defmodule TimelessBeamAcct.WatchTest do
       assert why =~ "No recording zzz"
     end
 
+    test "a recording whose node ended first is opened where what it wrote ends" do
+      now = Clock.now()
+      {started, stop_at, died} = {now - 5 * 3600, now - 3600, trunc(now - 3 * 3600)}
+      time = fn at -> at |> trunc() |> DateTime.from_unix!() |> DateTime.to_iso8601() end
+
+      started_only =
+        JSON.encode!(%{
+          "kind" => "recording",
+          "service" => "recording",
+          "status" => "started",
+          "recording" => "def456",
+          "node" => "app@ohm",
+          "started" => started,
+          "stop_at" => stop_at,
+          "_time" => time.(started)
+        })
+
+      # Readings every ten seconds until it died; five-minute parts of them
+      # over its stretch, stamped at the beginning of each part.
+      readings = Enum.to_list(trunc(started)..died//10)
+      parts = for at <- trunc(started)..died//300, do: [at, 500]
+
+      plane =
+        start_supervised!(
+          {TimelessBeamAcct.TestPlane,
+           answer: fn %{path: path} ->
+             query =
+               path |> URI.parse() |> Map.get(:query, "") |> to_string() |> URI.decode_query()
+
+             cond do
+               path =~ "/select/logsql" ->
+                 {200, started_only}
+
+               path =~ "/api/v1/query_range" ->
+                 {200, JSON.encode!(%{"series" => [%{"data" => parts}]})}
+
+               path =~ "/api/v1/export" ->
+                 {from, to} = {String.to_integer(query["start"]), String.to_integer(query["end"])}
+                 stamps = for at <- readings, at >= from, at <= to, do: at * 1000
+
+                 {200,
+                  JSON.encode!(%{
+                    "metric" => %{"__name__" => "beam_vm_processes"},
+                    "timestamps" => stamps,
+                    "values" => Enum.map(stamps, fn _ -> 500 end)
+                  })}
+
+               path =~ "/label/node/values" ->
+                 {200, JSON.encode!(%{"data" => ["app@ohm"]})}
+
+               true ->
+                 {200, JSON.encode!(%{"data" => []})}
+             end
+           end}
+        )
+
+      url = TimelessBeamAcct.TestPlane.url(plane)
+
+      assert {:ok, watch} =
+               Watch.new(logs_url: url, metrics_url: url, traces_url: url, recording: "def")
+
+      # Not at its stop_at, where there is nothing: at its last reading.
+      assert watch.state.at == died / 1
+      assert {^started, ended} = watch.state.stretch
+      assert ended == died / 1
+    end
+
     test "a group is gone into, and stays gone into through time" do
       {:ok, watch} = Watch.new(store: stored(), at: "-10m")
       watch = Watch.read_moment(watch)

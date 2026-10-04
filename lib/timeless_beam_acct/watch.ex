@@ -145,7 +145,7 @@ defmodule TimelessBeamAcct.Watch do
              {:ok, found} <- Store.recordings(planes, now - @recordings_back, now) do
           case Enum.filter(found, &String.starts_with?(&1.id, id)) do
             [found] ->
-              ended = found.ended || if(found.stop_at < now, do: found.stop_at)
+              ended = found.ended || if(found.stop_at < now, do: last_recorded(planes, found))
               at = if ended, do: Integer.to_string(trunc(ended)), else: "now"
 
               {:ok,
@@ -164,6 +164,26 @@ defmodule TimelessBeamAcct.Watch do
                  Enum.map_join(several, ", ", & &1.id)}
           end
         end
+    end
+  end
+
+  # A recording with no end said, whose time is past: its node ended
+  # before it did, and it ends where what it wrote does. Read over its
+  # whole stretch coarsely, and then the last part of it closely.
+  defp last_recorded(planes, found) do
+    store = %{planes | node: found.node}
+    {from, to} = {found.started, found.stop_at}
+
+    last = fn points -> points |> List.last() |> then(&(&1 && elem(&1, 0))) end
+
+    case Store.trend(store, "beam_vm_processes", [], from, to) do
+      {[], _} ->
+        to
+
+      {points, part} ->
+        coarse = last.(points)
+        close = Store.history(store, "beam_vm_processes", nil, nil, coarse - part, coarse + part)
+        min(last.(close) || coarse, to)
     end
   end
 
