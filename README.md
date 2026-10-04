@@ -84,9 +84,10 @@ iex> TimelessBeamAcct.trees(failed: true, limit: 1)
 
 ## Status
 
-Version 0.2.0. Collection, the sinks, putting a collector into a running
-node, and the three views work and are tested against a live VM, on
-OTP 27, 28 and 29, and on OTP 26 without exit accounting.
+Version 0.3.0. Collection, the sinks, putting a collector into a running
+node, the three views, recordings, `watch`, and the page in LiveDashboard
+work and are tested against a live VM, on OTP 27, 28 and 29, and on
+OTP 26 without exit accounting.
 [What is not here yet](#what-is-not-here-yet) is listed at the end, and
 [DESIGN.md](DESIGN.md) explains the decisions.
 

@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+Recordings, which end by themselves, and a page of them in LiveDashboard.
+The first release on Hex. The installer starts nothing: a collector runs
+while a recording is made, and not before.
 
 - **Recordings.** A collector told `stop_after: "1h"` ends by itself when
   its time is up, flushing what it has as a stopped collector does. Its
