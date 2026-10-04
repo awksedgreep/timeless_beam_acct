@@ -151,13 +151,24 @@ defmodule TimelessBeamAcct do
     * `:writer`: the sink, and how it is doing
     * `:recording`: when it began and when it is to end, if it was told
       `:stop_after`; otherwise `nil`
+
+  A recording that is waiting to begin (`:start_at`) is
+  `%{waiting: %{start_at: ..., stop_after: ..., by: ...}}`, and nothing
+  else, until it begins.
   """
   @spec status(name()) :: map() | nil
   def status(name \\ __MODULE__) do
-    with %{} = status <- Collector.status(name) do
-      status
-      |> Map.put(:writer, Writer.status(name))
-      |> Map.put(:recording, Recording.status(name))
+    case Collector.status(name) do
+      %{} = status ->
+        status
+        |> Map.put(:writer, Writer.status(name))
+        |> Map.put(:recording, Recording.status(name))
+
+      nil ->
+        case Recording.Waiting.status(name) do
+          nil -> nil
+          waiting -> %{waiting: waiting}
+        end
     end
   end
 

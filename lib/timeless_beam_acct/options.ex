@@ -77,6 +77,7 @@ defmodule TimelessBeamAcct.Options do
   | `:stop_after` | | how long to run: a recording, which ends by itself (`TimelessBeamAcct.Recording`). Without it, a collector runs until it is stopped |
   | `:max_recording` | `"24h"`, or the application's `:max_recording` | the longest a recording may be, at its start and when it is extended |
   | `:recorded_by` | | who started a recording, said in its records |
+  | `:start_at` | | when a recording begins: a time, as `"01:55"` or `"2026-10-04 01:55"`, in the node's own local time. A time of day that has passed today is that time tomorrow. Until then the collector waits, and reads nothing. Only with `:stop_after`, and at most a week ahead |
 
   ## Where it goes
 
@@ -145,7 +146,8 @@ defmodule TimelessBeamAcct.Options do
             history: 2_000,
             stop_after: nil,
             max_recording: nil,
-            recorded_by: nil
+            recorded_by: nil,
+            start_at: nil
 
   @http_keys [:metrics_url, :logs_url, :traces_url, :token, :timeout, :backlog] ++
                [:metrics_token, :logs_token, :traces_token]
@@ -278,6 +280,25 @@ defmodule TimelessBeamAcct.Options do
       else: wrong!(:trace_roots, value, "a list of modules")
   end
 
+  @week 7 * 86_400.0
+
+  defp check!(:start_at, nil), do: nil
+
+  defp check!(:start_at, value) do
+    now = Clock.now()
+
+    case Clock.parse_ahead(value, now) do
+      {:ok, at} when at > now + @week ->
+        wrong!(:start_at, value, "a time within a week")
+
+      {:ok, at} ->
+        at
+
+      {:error, why} ->
+        raise ArgumentError, ":start_at: #{why}"
+    end
+  end
+
   defp check!(:recorded_by, value) do
     cond do
       is_binary(value) and value != "" -> value
@@ -336,6 +357,11 @@ defmodule TimelessBeamAcct.Options do
         anomalies: options.anomalies,
         max_recording: options.max_recording || configured_max_recording()
     }
+
+    if options.start_at && is_nil(options.stop_after) do
+      raise ArgumentError,
+            ":start_at is for a recording, and is given with :stop_after: how long it is to run"
+    end
 
     if options.stop_after && options.stop_after > options.max_recording + 0.001 do
       raise ArgumentError,

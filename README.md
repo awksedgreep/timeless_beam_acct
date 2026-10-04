@@ -230,6 +230,7 @@ is as a **recording**, which ends by itself:
 
 ```sh
 mix timeless_beam_acct.record app@ohm --cookie secret --for 1h --sink http
+mix timeless_beam_acct.record app@ohm --start-at 01:55 --for 90m
 mix timeless_beam_acct.record app@ohm --extend 30m
 mix timeless_beam_acct.record app@ohm --stop
 mix timeless_beam_acct.recordings --logs-url http://127.0.0.1:9428
@@ -242,6 +243,12 @@ more. Its timer is in the node: it ends when it is to whether or not
 anyone is still there to stop it, flushing what it has as a stopped
 collector does. A recording among the children of a supervisor is not
 started again when it ends.
+
+`--start-at` (`start_at:`) begins it later, in the node's own local
+time: a job that runs at two for an hour is recorded from five to two
+for ninety minutes, and not from bedtime for eight hours. A time of day
+that has passed today is that time tomorrow, and `+30m` is half an hour
+from now. Until then the collector waits and reads nothing.
 
 It writes a record when it begins and one when it ends, `kind`
 `recording`, beside the records of processes. That is what

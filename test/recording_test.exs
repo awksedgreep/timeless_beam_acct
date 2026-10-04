@@ -109,6 +109,53 @@ defmodule TimelessBeamAcct.RecordingTest do
     Supervisor.stop(sup)
   end
 
+  test "a recording that is to begin later waits, reading nothing, and then begins" do
+    name = name()
+    at = TimelessBeamAcct.Clock.now() + 1.2
+    {:ok, sup} = TimelessBeamAcct.start_link(options(name, start_at: at, stop_after: 1))
+    Process.unlink(sup)
+    ref = Process.monitor(sup)
+
+    assert %{waiting: %{start_at: ^at, stop_after: 1.0}} = TimelessBeamAcct.status(name)
+    refute TimelessBeamAcct.running?(name)
+    assert recorded(300) == []
+
+    # It begins, runs its second, and ends.
+    Process.sleep(1_100)
+    assert TimelessBeamAcct.running?(name)
+    assert %{recording: %{started: started}} = TimelessBeamAcct.status(name)
+    assert started >= at
+    assert_receive {:DOWN, ^ref, :process, ^sup, :shutdown}, 5_000
+
+    assert [%{fields: %{"status" => "started"}}, %{fields: %{"status" => "ended"}}] =
+             recorded(500)
+  end
+
+  test "a recording that is waiting can be called off" do
+    name = name()
+    {:ok, sup} = TimelessBeamAcct.start_link(options(name, start_at: "+1h", stop_after: "1h"))
+    Process.unlink(sup)
+    assert %{waiting: _} = TimelessBeamAcct.status(name)
+    :ok = TimelessBeamAcct.stop(name)
+    assert TimelessBeamAcct.status(name) == nil
+    # It never began, and says nothing.
+    assert recorded(300) == []
+  end
+
+  test "a recording begins later only if it is a recording, and within a week" do
+    assert_raise ArgumentError, ~r/:start_at is for a recording/, fn ->
+      Options.new!(start_at: "+1h")
+    end
+
+    assert_raise ArgumentError, ~r/a time within a week/, fn ->
+      Options.new!(start_at: "+8d", stop_after: "1h")
+    end
+
+    assert_raise ArgumentError, ~r/:start_at/, fn ->
+      Options.new!(start_at: "soon", stop_after: 1)
+    end
+  end
+
   test "how long a recording may run is checked when it starts" do
     assert_raise ArgumentError,
                  ~r/:stop_after is 2d00h, and a recording may run 1d00h at most/,

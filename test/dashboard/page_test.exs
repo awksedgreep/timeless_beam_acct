@@ -14,6 +14,7 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
       said: nil,
       running: nil,
       collecting: false,
+      waiting: nil,
       recordings: [],
       error: nil
     }
@@ -48,10 +49,25 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     assert html =~ ~s(phx-submit="record")
     for {value, _} <- Page.lengths(), do: assert(html =~ ~s(value="#{value}"))
     assert html =~ ~s(name="other")
+    assert html =~ ~s(name="start_at")
     assert html =~ "a day at most"
     # Not where a collector is running already.
     refute page(collecting: true) =~ ~s(phx-submit="record")
     assert html =~ "No recordings in the last 31 days."
+  end
+
+  test "a recording that is waiting to begin says when" do
+    html =
+      page(
+        collecting: true,
+        waiting: %{start_at: @now + 3600, stop_after: 5400.0, by: "mark@ohm"}
+      )
+
+    assert html =~ "app@ohm is to be recorded"
+    assert html =~ "for 1h30m"
+    assert html =~ "Call it off"
+    refute html =~ "and is not a recording"
+    refute html =~ ~s(phx-submit="record")
   end
 
   test "a collector that is not a recording is said to be one" do

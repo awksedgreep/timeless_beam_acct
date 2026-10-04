@@ -49,8 +49,15 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     def handle_event("record", params, socket) do
       length = if params["length"] == "other", do: params["other"], else: params["length"]
 
+      start_at =
+        case params["start"] do
+          "at" -> [start_at: params["start_at"]]
+          _ -> []
+        end
+
       opts =
         [stop_after: length, recorded_by: "LiveDashboard on #{node()}", sink: :http] ++
+          start_at ++
           Keyword.take(configured(), @plane_keys) ++
           if(params["processes"] == "true", do: [], else: [max_processes: 0]) ++
           if(params["failed_only"] == "true", do: [records: :abnormal], else: [])
@@ -100,11 +107,12 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       node = socket.assigns.page.node
       now = Clock.now()
 
-      {running, collecting} =
+      {running, collecting, waiting} =
         case Live.status(%Live{node: node}) do
-          {:ok, %{recording: %{} = recording}} -> {recording, true}
-          {:ok, _not_a_recording} -> {nil, true}
-          _ -> {nil, false}
+          {:ok, %{waiting: waiting}} -> {nil, true, waiting}
+          {:ok, %{recording: %{} = recording}} -> {recording, true, nil}
+          {:ok, _not_a_recording} -> {nil, true, nil}
+          _ -> {nil, false, nil}
         end
 
       {recordings, error} =
@@ -128,6 +136,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
         now: now,
         running: running,
         collecting: collecting,
+        waiting: waiting,
         recordings: recordings,
         error: error
       )
@@ -177,7 +186,16 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           <button phx-click="extend" phx-value-by="1h">+1 hour</button>
         </div>
 
-        <p :if={!@running and @collecting}>
+        <div :if={@waiting} class="tba-banner">
+          <strong>{@node} is to be recorded</strong>
+          from {Clock.format(@waiting.start_at)}, for {Human.duration(@waiting.stop_after)}{if @waiting.by,
+            do: ", as asked by #{@waiting.by}"}. Until then it waits, and reads nothing.
+          <div>
+            <button phx-click="stop" data-confirm="Call this recording off?">Call it off</button>
+          </div>
+        </div>
+
+        <p :if={!@running and @collecting and !@waiting}>
           A collector is running in {@node}, and is not a recording: it runs until it is
           stopped. It was started in code or by <code>attach</code>, without <code>stop_after</code>.
         </p>
@@ -191,6 +209,13 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
             </label>
             <label><input type="radio" name="length" value="other" /></label>
             <input type="text" name="other" placeholder="90m" size="5" />
+          </div>
+          <div>
+            start
+            <label><input type="radio" name="start" value="now" checked /> now</label>
+            <label><input type="radio" name="start" value="at" /> at</label>
+            <input type="text" name="start_at" placeholder="01:55" size="6" />
+            <small>(the node's time; a time that has passed today is tomorrow)</small>
           </div>
           <div>
             <label>

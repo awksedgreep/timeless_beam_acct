@@ -44,6 +44,40 @@ defmodule TimelessBeamAcct.Clock do
     end
   end
 
+  @doc """
+  A moment to come, as `parse/2` reads it, except that a time of day
+  alone that has passed today is that time tomorrow: `01:55` written at
+  22:00 is five to two in the morning, and not twenty hours ago. And
+  `+90m` is ninety minutes from now.
+  """
+  @spec parse_ahead(String.t() | number() | DateTime.t(), number()) ::
+          {:ok, float()} | {:error, String.t()}
+  def parse_ahead(written, now \\ now())
+
+  # A distance ahead: `+90m`, in so long from now.
+  def parse_ahead("+" <> span, now) do
+    with {:ok, seconds} <- parse_span(String.trim(span)), do: {:ok, now / 1 + seconds}
+  end
+
+  def parse_ahead(written, now) do
+    with {:ok, at} <- parse(written, now) do
+      time_of_day? = is_binary(written) and written =~ ~r/\A\s*\d{1,2}:\d{2}(:\d{2})?\s*\z/
+
+      cond do
+        time_of_day? and at < now ->
+          # Of the same wall clock tomorrow, whatever the length of today.
+          [hh, mm | ss] = written |> String.trim() |> String.split(":")
+          {today, _time} = local(now)
+          tomorrow = today |> Date.from_erl!() |> Date.add(1)
+          text = "#{Date.to_iso8601(tomorrow)} #{hh}:#{mm}#{if ss != [], do: ":" <> hd(ss)}"
+          parse(text, now)
+
+        true ->
+          {:ok, at}
+      end
+    end
+  end
+
   @doc "As `parse/2`, raising on what is not a time."
   @spec parse!(String.t() | number() | DateTime.t(), number()) :: float()
   def parse!(written, now \\ now()) do

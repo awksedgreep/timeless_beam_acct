@@ -183,7 +183,18 @@ defmodule TimelessBeamAcct.Watch do
 
       node ->
         live = %Live{node: node, name: opts[:name] || TimelessBeamAcct}
-        with {:ok, status} <- Live.status(live), do: {:ok, live, status}
+
+        case Live.status(live) do
+          {:ok, %{waiting: %{start_at: start_at}}} ->
+            {:error,
+             "#{node} is to be recorded from #{Clock.format(start_at)}, and has read nothing yet"}
+
+          {:ok, status} ->
+            {:ok, live, status}
+
+          {:error, why} ->
+            {:error, why}
+        end
     end
   end
 

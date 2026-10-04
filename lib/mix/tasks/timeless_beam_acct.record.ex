@@ -7,6 +7,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.Record do
 
       mix timeless_beam_acct.record app@ohm --cookie secret --for 1h
       mix timeless_beam_acct.record app@ohm --for 8h --metrics-url http://planes:8428 ...
+      mix timeless_beam_acct.record app@ohm --start-at 01:55 --for 90m
       mix timeless_beam_acct.record app@ohm --extend 30m
       mix timeless_beam_acct.record app@ohm --stop
 
@@ -14,6 +15,12 @@ defmodule Mix.Tasks.TimelessBeamAcct.Record do
   `--max-recording` says more. The collector's timer is in the node: the
   recording ends when it is to whether or not this terminal is still
   there. While it runs, `mix timeless_beam_acct.watch` looks at it.
+
+  `--start-at` begins it later: a time, in the node's own local time, as
+  `01:55` or `2026-10-04 01:55`. A time of day that has passed today is
+  that time tomorrow. Until then the collector waits and reads nothing.
+  A job that runs at two for an hour is recorded `--start-at 01:55 --for
+  90m`, and not from bedtime for eight hours.
 
   `--extend` makes a recording that is running run longer, and `--stop`
   ends it now.
@@ -67,6 +74,13 @@ defmodule Mix.Tasks.TimelessBeamAcct.Record do
     case Remote.attach(node, opts) do
       {:ok, _collector} ->
         case Remote.status(node, name) do
+          {:ok, %{waiting: %{start_at: start_at, stop_after: length}}} ->
+            Mix.shell().info(
+              "Recording #{node} from #{Clock.format(start_at)}, for #{Human.duration(length)}. " <>
+                "Until then it waits, and reads nothing. It ends by itself.\n\n" <>
+                "    mix timeless_beam_acct.record #{node} --stop       to call it off"
+            )
+
           {:ok, %{recording: %{stop_at: stop_at, started: started}}} ->
             Mix.shell().info(
               "Recording #{node} for #{Human.duration(stop_at - started)}, until #{Clock.format(stop_at)}. " <>

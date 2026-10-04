@@ -21,6 +21,28 @@ defmodule TimelessBeamAcct.Supervisor do
 
   @impl true
   def init(%Options{} = options) do
+    flags =
+      if options.stop_after,
+        do: [strategy: :one_for_one, auto_shutdown: :any_significant],
+        else: [strategy: :one_for_one]
+
+    # A recording that is to begin later begins as one that waits, which
+    # starts the rest when it is time.
+    children =
+      if options.start_at && options.start_at > TimelessBeamAcct.Clock.now(),
+        do: [{Recording.Waiting, options}],
+        else: children(options)
+
+    Supervisor.init(children, flags)
+  end
+
+  @doc """
+  What a collector is made of: the writer, and beside it the tracer and
+  the collection loop; and, if it is a recording, what ends it, which is
+  the last child and ends first.
+  """
+  @spec children(Options.t()) :: [Supervisor.child_spec() | {module(), term()}]
+  def children(%Options{} = options) do
     collection = %{
       id: :collection,
       type: :supervisor,
@@ -32,17 +54,7 @@ defmodule TimelessBeamAcct.Supervisor do
          ]}
     }
 
-    # A recording is the last child, and ends first. When its time runs
-    # out it ends normally, and its supervisor, this, with it.
-    case options.stop_after do
-      nil ->
-        Supervisor.init([{Writer, options}, collection], strategy: :one_for_one)
-
-      _length ->
-        Supervisor.init([{Writer, options}, collection, {Recording, options}],
-          strategy: :one_for_one,
-          auto_shutdown: :any_significant
-        )
-    end
+    [{Writer, options}, collection] ++
+      if options.stop_after, do: [{Recording, options}], else: []
   end
 end

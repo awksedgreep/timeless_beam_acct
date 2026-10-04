@@ -269,7 +269,7 @@ and `mix` agree on it.
   after which it flushes and stops itself. The timer is in the collector
   (section 5). `status/1` says when it will stop. `extend/2` moves the
   end, and is refused past a most that is given when it is started.
-- [ ] **A2 — `start_at`.** (S) An option that waits until a time before
+- [x] **A2 — `start_at`.** (S) An option that waits until a time before
   the collector starts listening. Until then it is running and records
   nothing, and `status/1` says when it will begin.
 - [x] **A3 — A recording, written down.** (M) With `recording: true` (or

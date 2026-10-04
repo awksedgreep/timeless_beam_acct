@@ -13,6 +13,11 @@
   (`kind` `recording`), with its id, its length, who started it, and how
   it ended: its time ran out, it was stopped, or what it ran in went
   first.
+- `start_at:` (`--start-at`) begins a recording later: `"01:55"`, which
+  is tomorrow if it has passed today, `"2026-10-04 01:55"`, or `"+30m"`,
+  within a week. Until then the collector waits and reads nothing, and
+  `status/1` says `%{waiting: ...}`. The page offers it, and calls one
+  off.
 - `mix timeless_beam_acct.record NODE --for 1h`: a recording put into a
   running node; `--extend` and `--stop` while it runs. `mix
   timeless_beam_acct.recordings` lists the recordings in a logs plane,
