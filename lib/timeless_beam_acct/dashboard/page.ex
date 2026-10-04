@@ -143,6 +143,15 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       end
     end
 
+    def handle_event("record", _params, %{assigns: %{answering: false}} = socket) do
+      {:noreply,
+       assign(socket,
+         said:
+           "It could not be started: the Timeless planes are not answering, and a " <>
+             "recording is written to them."
+       )}
+    end
+
     def handle_event("record", params, socket) do
       length = if params["length"] == "other", do: params["other"], else: params["length"]
 
@@ -231,19 +240,29 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           _ -> []
         end
 
+      # A recording is written to the planes and read from them: without
+      # them there is nothing to list, and nowhere for one to go.
       {recordings, error} =
         case planes() do
           nil ->
             {[],
-             "Where the planes are is not configured: config :timeless_beam_acct, :dashboard, logs_url: ..."}
+             "Where the Timeless planes are is not configured. A recording is written to " <>
+               "them and read from them: config :timeless_beam_acct, :dashboard, " <>
+               "metrics_url: ..., logs_url: ..., traces_url: ..."}
 
           {:error, why} ->
             {[], why}
 
           {:ok, planes} ->
             case Store.recordings(planes, now - @listed, now) do
-              {:ok, recordings} -> {recordings, nil}
-              {:error, why} -> {[], why}
+              {:ok, recordings} ->
+                {recordings, nil}
+
+              {:error, why} ->
+                {[],
+                 "The Timeless planes are not answering (#{why}). A recording is written to " <>
+                   "them and read from them, so none can be started until they answer. " <>
+                   "Where they are is in config :timeless_beam_acct, :dashboard."}
             end
         end
 
@@ -259,7 +278,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
         recording_name: recording_name,
         waiting: waiting,
         recordings: recordings,
-        error: error
+        error: error,
+        answering: is_nil(error)
       )
     end
 
@@ -367,6 +387,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           </div>
         </div>
 
+        <div :if={@error} class="alert alert-warning py-2">{@error}</div>
+
         <div :if={!@running and !@waiting} class="card mb-4">
           <div class="card-body">
             <h5 class="card-title">Record {@node}</h5>
@@ -426,15 +448,18 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
                   {@estimate || "A recording costs a node about 5% of one core where 65 processes end a second, and less where fewer do."}
                   It ends by itself; a day at most.
                 </small>
-                <button type="submit" data-confirm={"Record #{@node}?"} class="btn btn-primary btn-sm ml-3">
+                <button
+                  type="submit"
+                  disabled={@error != nil}
+                  data-confirm={"Record #{@node}?"}
+                  class="btn btn-primary btn-sm ml-3"
+                >
                   Record
                 </button>
               </div>
             </form>
           </div>
         </div>
-
-        <div :if={@error} class="alert alert-danger py-2">{@error}</div>
 
         <div class="card">
           <div class="card-header d-flex justify-content-between">

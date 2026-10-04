@@ -99,7 +99,9 @@ defmodule TimelessBeamAcct.Dashboard.RecordingFromPageTest do
     {:noreply, socket} = Page.handle_event("record", %{"length" => "4h"}, socket())
     assert socket.assigns.said =~ "at most"
 
-    {:noreply, socket} = Page.handle_event("record", %{"length" => "1h"}, socket)
+    # A page that has not read the planes of these tests, which are not
+    # there, and so has not been told they do not answer.
+    {:noreply, socket} = Page.handle_event("record", %{"length" => "1h"}, socket())
     assert socket.assigns.said == "Recording."
     # Told to the node recorded, and not left to what it would say itself.
     assert TimelessBeamAcct.status().options.max_recording == 7200.0
@@ -110,6 +112,14 @@ defmodule TimelessBeamAcct.Dashboard.RecordingFromPageTest do
     assert socket.assigns.said =~ "at most"
 
     {:noreply, _socket} = Page.handle_event("stop", %{}, socket)
+    refute TimelessBeamAcct.running?()
+  end
+
+  test "where the planes did not answer, nothing is started" do
+    socket = %{socket() | assigns: Map.put(socket().assigns, :answering, false)}
+    {:noreply, socket} = Page.handle_event("record", %{"length" => "1h"}, socket)
+
+    assert socket.assigns.said =~ "not answering"
     refute TimelessBeamAcct.running?()
   end
 

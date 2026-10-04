@@ -64,6 +64,10 @@
   `start: true`: a collector that started with the application and ran
   until it was stopped, which is not how it is meant to be run. `--sink`
   is said with `--always-on`, and refused without it.
+- The page says plainly when the planes are not configured, or do not
+  answer, above the form, and **Record** is not offered until they do: a
+  recording is written to them, and one started without them had
+  nowhere to go. It used to show what the HTTP client said, below.
 - A collector started from the configuration (`start: true`) no longer
   takes `:dashboard`, the page's, for an option of its own. The
   installer writes both in an application with LiveDashboard, and the

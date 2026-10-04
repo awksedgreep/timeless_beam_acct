@@ -183,4 +183,13 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     assert html =~ "connection refused"
     assert html =~ "The recording was stopped."
   end
+
+  test "where the planes do not answer, a recording is not offered to be started" do
+    answering = page([])
+    refute answering =~ ~r/<button[^>]*disabled[^>]*>\s*Record\s*</
+
+    down = page(error: "The Timeless planes are not answering (connection refused).")
+    assert down =~ "The Timeless planes are not answering"
+    assert down =~ ~r/<button[^>]*disabled[^>]*>\s*Record\s*</
+  end
 end
