@@ -10,8 +10,8 @@ run against real planes for days and a terminal screen was built over
 it. What changed, and why, is in section 3. No code has been written for
 the page.
 
-It is a separate project, `timeless_beam_acct_dashboard`. This plan is
-kept here because the first track is changes to this one.
+It is built in this repository, as part of this package, and is there
+only for an application that has Phoenix LiveDashboard (D2).
 
 Status legend: `[ ]` pending · `[~]` in progress · `[x]` done · `[?]` needs a decision
 
@@ -85,12 +85,19 @@ These are measurements, and they change the plan.
 ## 4. Decisions
 
 - [x] **D1 — Fixed layout, no canvas.** Decided.
-- [x] **D2 — A separate project**, `timeless_beam_acct_dashboard`, which
-  depends on this one. Decided.
+- [x] **D2 — In this repository, not a separate project.** Decided
+  2026-10-03, reversing the first draft. `phoenix_live_dashboard` and
+  `phoenix_live_view` are optional dependencies: an application without
+  them fetches nothing more than it did, and the collector stays without
+  dependencies of its own. The page's modules are compiled only where
+  LiveDashboard is (`if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder)`),
+  as the Igniter task is now where Igniter is. `Remote.modules/0` leaves
+  them out, as it leaves out `Watch`. The page and the collector are one
+  version, so there is no contract to keep between two.
 - [x] **D3 — Now is read from the collector in the node**, by `:erpc`,
   as `watch` reads it (L6). Decided by `watch`.
-- [?] **D4 — Where the past is read from.** **Recommended: the planes
-  only, at first**, through `Watch.Store` (L4, L10). The stores in the
+- [x] **D4 — Where the past is read from: the planes, at first.**
+  Decided 2026-10-03, through `Watch.Store` (L4, L10). The stores in the
   node (`:timeless` sink) are a second implementation of the same
   behaviour, and can come after.
 - [x] **D5 — The time control is a recording's stretch and a moment in
@@ -102,16 +109,18 @@ These are measurements, and they change the plan.
   its own.** Reverses the first draft, which said the page should never
   start a collector. Starting one is behind a confirmation that says what
   it will cost (L2, L3). See section 5 for how long.
-- [?] **D7 — Where a recording is written down.** **Recommended: in the
-  logs plane, as two records**: one when it starts (`kind: "recording"`,
+- [x] **D7 — A recording is written down in the logs plane, as two
+  records.** Decided 2026-10-03: one when it starts (`kind: "recording"`,
   `status: "started"`, with the node, the options, how long it was asked
   to run, and who started it) and one when it ends (`status: "ended"`,
   with why: its time ran out, it was stopped, the node went away). The
   list of recordings is then a query, and a recording made from `mix` or
   from code appears in it as one made from the page does. Nothing new is
   stored anywhere.
-- [?] **D8 — The name in the menu.** **Recommended: `BEAM`**, with the
-  page under the key `beam:`.
+- [?] **D8 — The name in the menu.** The other three are `TimelessMetrics`,
+  `TimelessLogs`, and `TimelessTraces`. Proposed: `TimelessAcct`; or
+  `TimelessBeamAcct`, which does not take the name of the host's
+  collector, timeless-acct, should it have a page of its own.
 
 ---
 
@@ -125,7 +134,7 @@ writes that it did (D7).
 |---|---|
 | Choices | **15 minutes, 1 hour, 4 hours, 8 hours**, or a length typed in |
 | Unless told | **1 hour** |
-| The most | **24 hours**, unless the host's configuration says otherwise (`config :timeless_beam_acct_dashboard, max_recording: "48h"`) |
+| The most | **24 hours** (decided 2026-10-03), unless the host's configuration says otherwise (`config :timeless_beam_acct, max_recording: "48h"`) |
 | While it runs | **Stop**, now; and **+1 hour**, which is refused past the most |
 | Starting later | **Start at** a time, with the same choices of length: a job that runs at 02:00 for an hour is recorded from 01:55 for 90 minutes, and not from bedtime for 8 hours |
 
@@ -242,10 +251,10 @@ graph TD
 
 | Lane | Track | Repo | Blocked by | Can start |
 | --- | --- | --- | --- | --- |
-| 1 | A — recordings in the collector | `timeless_beam_acct` | D7 | **now**, A1 at once |
-| 2 | B — the package | new `timeless_beam_acct_dashboard` | nothing | **now** |
-| 3 | C — recording from the page | the new one | A1–A3, B1–B4 | after those |
-| 4 | D — going through a recording | the new one | A3, B1–B4, D4 | after those |
+| 1 | A — recordings in the collector | `lib/timeless_beam_acct/` | nothing | **now** |
+| 2 | B — the page's frame | `lib/timeless_beam_acct/dashboard/` | nothing | **now** |
+| 3 | C — recording from the page | `lib/timeless_beam_acct/dashboard/` | A1–A3, B1–B4 | after those |
+| 4 | D — going through a recording | `lib/timeless_beam_acct/dashboard/` | A3, B1–B4 | after those |
 
 C and D do not depend on each other.
 
@@ -285,19 +294,23 @@ collector that ends.
 
 ---
 
-## 9. Track B — the package (`timeless_beam_acct_dashboard`)
+## 9. Track B — the page's frame, in this repository
 
 Depends on nothing.
 
-- [ ] **B1 — The project.** (S) `mix new`, depending on
-  `timeless_beam_acct`, `phoenix_live_dashboard ~> 0.8`, and
-  `phoenix_live_view ~> 1.0`. A `Page` with the recordings and an opened
-  recording as its two states, and the menu link (D8).
+- [ ] **B1 — The optional dependencies.** (S) `phoenix_live_dashboard
+  ~> 0.8` and `phoenix_live_view ~> 1.0`, `optional: true`.
+  `TimelessBeamAcct.Dashboard.Page`, compiled only where LiveDashboard
+  is, with the recordings and an opened recording as its two states, and
+  the menu link (D8). `Remote.modules/0` leaves it out. The suite is run
+  with and without the two, so that neither breaks the other.
 - [ ] **B2 — The router macro.** (S) As `timeless_traces_dashboard/2`
   (L7).
-- [ ] **B3 — The install task.** (S) With Igniter, optional, as the
-  others. It adds the page and the configuration of the planes. It does
-  not start a collector.
+- [ ] **B3 — The install task learns Phoenix.** (S) `mix
+  timeless_beam_acct.install` finds a router with `live_dashboard` in it
+  and adds the page to it, and the configuration of the planes; in an
+  application without one it does what it does now. It does not start a
+  collector unless asked, as it does not now.
 - [ ] **B4 — Sharing `watch`.** (M) The page reads through `Watch.Store`,
   `Watch.Live`, and `Watch.Data`, and keeps its moment in `Watch.State`
   (L10). Whatever of them is written for the terminal and not for a page
@@ -352,8 +365,7 @@ Depends on A3, B1–B4, D4.
   a recording is made: the page, `mix timeless_beam_acct.record`, and
   `stop_after` in code.
 - [ ] **E2 — `timeless_phoenix`.** (S) `dashboard_pages/1` has the fourth
-  page (L8), when `timeless_beam_acct_dashboard` is among the
-  dependencies.
+  page (L8), when `timeless_beam_acct` is among the dependencies.
 - [ ] **E3 — A night.** (M) `bench/watch_node.exs`, recorded from the
   page for eight hours with nobody looking, against planes started for
   it. What the page and the recording cost, and whether the recording
@@ -387,10 +399,7 @@ Depends on A3, B1–B4, D4.
 
 ## 15. Things that need you
 
-- D4, D7, D8.
-- The longest recording allowed unless configured (section 5): 24 hours
-  is proposed.
-- The repository for `timeless_beam_acct_dashboard`, and its name.
+- D8, the name in the menu.
 - E3 runs against planes started for it. Nothing is pointed at the
   planes that are running without being asked.
 
@@ -405,4 +414,5 @@ Depends on A3, B1–B4, D4.
    before the page exists.
 3. **A3** once D7 is agreed, so that recordings are found and not
    remembered.
-4. **B1** and **B4** in the new repository, beside them.
+4. **B1** and **B4** beside them: the page's frame, compiled where
+   LiveDashboard is, reading through what `watch` reads through.
