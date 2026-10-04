@@ -53,6 +53,10 @@ defmodule Mix.Tasks.TimelessBeamAcct.Watch do
     * `--node`, `--host`: whose series are read, of a store that has
       several nodes'
     * `--at`: the moment to begin at, and now unless told
+    * `--recording`: a recording, by its id or the beginning of it
+      (`mix timeless_beam_acct.recordings` lists them): its node, at its
+      end, with the timeline long enough to have all of it. The planes are
+      said with `--metrics-url`, `--logs-url`, and `--traces-url`
     * `--view`: `groups`, `processes`, `jobs`, or `exits`
     * `--refresh`: seconds between looks at now, 2 unless told
     * `--print`: `120x40` draws the screen once, as text, for a script or
@@ -79,6 +83,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.Watch do
     node: :string,
     host: :string,
     at: :string,
+    recording: :string,
     view: :string,
     refresh: :integer,
     print: :string

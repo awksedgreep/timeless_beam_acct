@@ -89,6 +89,19 @@ defmodule TimelessBeamAcct.Watch.State do
   @spec sort_title(sort()) :: String.t()
   def sort_title(sort), do: Atom.to_string(sort)
 
+  @doc """
+  The timeline drawn out until it shows a stretch of at least `span`
+  seconds, as far as it can be: what a recording is opened with.
+  """
+  @spec fit(t(), number() | nil) :: t()
+  def fit(%__MODULE__{} = state, nil), do: state
+
+  def fit(%__MODULE__{} = state, span) do
+    last = tuple_size(@windows) - 1
+    index = Enum.find(0..last, last, &(elem(@windows, &1) >= span))
+    %{state | window: index}
+  end
+
   @doc "How long a stretch the timeline shows, in seconds."
   @spec window(t()) :: float()
   def window(%__MODULE__{window: window}), do: elem(@windows, window)

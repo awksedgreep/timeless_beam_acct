@@ -53,6 +53,7 @@ defmodule TimelessBeamAcct do
     History,
     Options,
     Processes,
+    Recording,
     Report,
     Tracer,
     Writer
@@ -81,7 +82,9 @@ defmodule TimelessBeamAcct do
     %{
       id: options.name,
       start: {__MODULE__, :start_link, [options]},
-      type: :supervisor
+      type: :supervisor,
+      # A recording ends by itself, and is not started again when it has.
+      restart: if(options.stop_after, do: :transient, else: :permanent)
     }
   end
 
@@ -146,13 +149,24 @@ defmodule TimelessBeamAcct do
     * `:dropped`: records and ticks let go
     * `:vm`: the node, as of the last reading
     * `:writer`: the sink, and how it is doing
+    * `:recording`: when it began and when it is to end, if it was told
+      `:stop_after`; otherwise `nil`
   """
   @spec status(name()) :: map() | nil
   def status(name \\ __MODULE__) do
     with %{} = status <- Collector.status(name) do
-      Map.put(status, :writer, Writer.status(name))
+      status
+      |> Map.put(:writer, Writer.status(name))
+      |> Map.put(:recording, Recording.status(name))
     end
   end
+
+  @doc """
+  Make a recording run longer: `"1h"`. Refused past the most a recording
+  may run. See `TimelessBeamAcct.Recording`.
+  """
+  @spec extend(name(), String.t() | number()) :: {:ok, float()} | {:error, String.t()}
+  def extend(name \\ __MODULE__, more), do: Recording.extend(name, more)
 
   @doc """
   Take a reading now, and wait until it has been taken.

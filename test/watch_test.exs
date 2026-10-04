@@ -345,6 +345,68 @@ defmodule TimelessBeamAcct.WatchTest do
       assert Enum.any?(watch.snapshot.groups, &String.ends_with?(&1.name, ".Collector"))
     end
 
+    test "a recording is opened by its id, at its end, with all of it on the timeline" do
+      now = Clock.now()
+
+      recording = %{
+        id: "abc123",
+        node: "app@ohm",
+        host: "ohm",
+        started: now - 5 * 3600,
+        stop_at: now - 3600,
+        ended: now - 3600,
+        reason: "time",
+        by: nil
+      }
+
+      plane =
+        start_supervised!(
+          {TimelessBeamAcct.TestPlane,
+           answer: fn _ ->
+             fields = %{
+               "kind" => "recording",
+               "service" => "recording",
+               "recording" => recording.id,
+               "node" => recording.node,
+               "started" => recording.started,
+               "stop_at" => recording.stop_at
+             }
+
+             time = fn at -> at |> trunc() |> DateTime.from_unix!() |> DateTime.to_iso8601() end
+
+             body =
+               [
+                 Map.merge(fields, %{
+                   "status" => "ended",
+                   "reason" => "time",
+                   "_time" => time.(recording.ended)
+                 }),
+                 Map.merge(fields, %{"status" => "started", "_time" => time.(recording.started)})
+               ]
+               |> Enum.map_join("\n", &JSON.encode!/1)
+
+             {200, body}
+           end}
+        )
+
+      url = TimelessBeamAcct.TestPlane.url(plane)
+
+      # Found by the beginning of its id.
+      assert {:error, why} =
+               Watch.new(
+                 logs_url: url,
+                 metrics_url: "http://127.0.0.1:1",
+                 recording: "abc",
+                 timeout: 500
+               )
+
+      # It is found; then the metrics plane, which is not there, is reached for.
+      assert why =~ "http://127.0.0.1:1"
+
+      assert {:error, why} = Watch.new(logs_url: url, recording: "zzz")
+      assert why =~ "No recording zzz"
+    end
+
     test "a group is gone into, and stays gone into through time" do
       {:ok, watch} = Watch.new(store: stored(), at: "-10m")
       watch = Watch.read_moment(watch)

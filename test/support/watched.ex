@@ -95,6 +95,7 @@ defmodule TimelessBeamAcct.Watched do
               incidents: [],
               exits: [],
               jobs: [],
+              recordings: [],
               error: nil,
               to: nil
 
@@ -117,6 +118,9 @@ defmodule TimelessBeamAcct.Watched do
 
     @impl true
     def spacing(store, _until), do: store.spacing
+
+    @impl true
+    def recordings(store, _from, _to), do: {:ok, store.recordings}
 
     @impl true
     def timeline(store, from, to) do

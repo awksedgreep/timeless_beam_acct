@@ -265,19 +265,19 @@ C and D do not depend on each other.
 What a recording is belongs to the collector, so that the page, `watch`,
 and `mix` agree on it.
 
-- [ ] **A1 — `stop_after`.** (S) An option of the collector: a length,
+- [x] **A1 — `stop_after`.** (S) An option of the collector: a length,
   after which it flushes and stops itself. The timer is in the collector
   (section 5). `status/1` says when it will stop. `extend/2` moves the
   end, and is refused past a most that is given when it is started.
 - [ ] **A2 — `start_at`.** (S) An option that waits until a time before
   the collector starts listening. Until then it is running and records
   nothing, and `status/1` says when it will begin.
-- [ ] **A3 — A recording, written down.** (M) With `recording: true` (or
+- [x] **A3 — A recording, written down.** (M) With `recording: true` (or
   any `stop_after`), the collector writes a record when it begins and one
   when it ends (D7). `TimelessBeamAcct.Recordings`: the recordings of a
   store, from those records, as data: node, stretch, options, who, how it
   ended, and the exits and failures counted in it.
-- [ ] **A4 — `mix timeless_beam_acct.record NODE --for 1h`.** (S)
+- [x] **A4 — `mix timeless_beam_acct.record NODE --for 1h`.** (S)
   Attaches a collector with `stop_after`, says when it will end, and
   returns. `watch` gains `--recording`, which opens one by its start.
 - [ ] **A5 — What a recording will cost, said in advance.** (S) From the

@@ -473,6 +473,35 @@ defmodule TimelessBeamAcct.Watch.Planes do
   end
 
   @impl true
+  def recordings(%__MODULE__{} = store, from, to) do
+    # Of every node: a recording is found by when it began, whoever it was of.
+    asked =
+      get(
+        store,
+        :logs,
+        "/select/logsql/query",
+        bounds(from, to) ++ [service: "recording", limit: @records, order: "desc"] ++ host(store)
+      )
+
+    case asked do
+      {:ok, body} ->
+        {:ok,
+         body
+         |> lines()
+         |> Enum.flat_map(fn row ->
+           case moment(row["_time"]) do
+             nil -> []
+             at -> [{at, Map.drop(row, ["_msg", "_time"])}]
+           end
+         end)
+         |> Store.recordings_of()}
+
+      {:error, why} ->
+        {:error, why}
+    end
+  end
+
+  @impl true
   def exits(%__MODULE__{} = store, %{until: until, span: span, limit: limit}, wanted) do
     # What is wanted is decided as the store is read, and not after: a
     # busy node ends hundreds of processes a second, and the one that is

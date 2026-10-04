@@ -221,6 +221,33 @@ collector stays when the task that attached it ends.
 The node has to have Elixir in it, no older than the Elixir and the OTP
 the task runs on. `examples/busy_node.exs` is a node to try it on.
 
+### For a while: a recording
+
+A collector is something run while something is looked for, and stopped.
+Left running for days, its series of processes pile up in the planes
+(DESIGN.md, "How many series that is, over time"). So the way to run one
+is as a **recording**, which ends by itself:
+
+```sh
+mix timeless_beam_acct.record app@ohm --cookie secret --for 1h --sink http
+mix timeless_beam_acct.record app@ohm --extend 30m
+mix timeless_beam_acct.record app@ohm --stop
+mix timeless_beam_acct.recordings --logs-url http://127.0.0.1:9428
+mix timeless_beam_acct.watch --recording bfca9934 --metrics-url ... --logs-url ... --traces-url ...
+```
+
+or in code, `stop_after: "1h"` among a collector's options. A recording
+runs an hour unless told, and a day at most unless `:max_recording` says
+more. Its timer is in the node: it ends when it is to whether or not
+anyone is still there to stop it, flushing what it has as a stopped
+collector does. A recording among the children of a supervisor is not
+started again when it ends.
+
+It writes a record when it begins and one when it ends, `kind`
+`recording`, beside the records of processes. That is what
+`recordings` lists, and what `watch --recording` opens: the node it was
+of, at its end, with the timeline long enough to have all of it.
+
 ### To the canvas
 
 The canvas reads from the Timeless planes. Point the collector at them:

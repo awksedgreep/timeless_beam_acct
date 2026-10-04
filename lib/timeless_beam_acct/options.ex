@@ -70,6 +70,14 @@ defmodule TimelessBeamAcct.Options do
   A canvas host element turns red on an error and amber on a warning, so
   these decide the colour of the host.
 
+  ## How long
+
+  | option | default | |
+  |---|---|---|
+  | `:stop_after` | | how long to run: a recording, which ends by itself (`TimelessBeamAcct.Recording`). Without it, a collector runs until it is stopped |
+  | `:max_recording` | `"24h"`, or the application's `:max_recording` | the longest a recording may be, at its start and when it is extended |
+  | `:recorded_by` | | who started a recording, said in its records |
+
   ## Where it goes
 
   | option | default | |
@@ -88,7 +96,7 @@ defmodule TimelessBeamAcct.Options do
   `:sink` or with it.
   """
 
-  alias TimelessBeamAcct.{Clock, Sink}
+  alias TimelessBeamAcct.{Clock, Human, Sink}
 
   @mib 1024 * 1024
 
@@ -134,7 +142,10 @@ defmodule TimelessBeamAcct.Options do
             max_anomalies: 50,
             trace_max_queue: 100_000,
             trace_resume_after: 5.0,
-            history: 2_000
+            history: 2_000,
+            stop_after: nil,
+            max_recording: nil,
+            recorded_by: nil
 
   @http_keys [:metrics_url, :logs_url, :traces_url, :token, :timeout, :backlog] ++
                [:metrics_token, :logs_token, :traces_token]
@@ -144,7 +155,9 @@ defmodule TimelessBeamAcct.Options do
     :process_interval,
     :min_age,
     :trace_max_age,
-    :trace_resume_after
+    :trace_resume_after,
+    :stop_after,
+    :max_recording
   ]
   @flags [
            :vm,
@@ -265,6 +278,14 @@ defmodule TimelessBeamAcct.Options do
       else: wrong!(:trace_roots, value, "a list of modules")
   end
 
+  defp check!(:recorded_by, value) do
+    cond do
+      is_binary(value) and value != "" -> value
+      is_atom(value) and value not in [nil, true, false] -> Atom.to_string(value)
+      true -> wrong!(:recorded_by, value, "a name")
+    end
+  end
+
   defp check!(key, value) when key in [:host, :node] do
     cond do
       is_binary(value) and value != "" -> value
@@ -309,7 +330,41 @@ defmodule TimelessBeamAcct.Options do
   # Spans are made of accounting records, and accounting records of what
   # the VM says of each exit.
   defp consistent!(options) do
-    %{options | traces: options.traces and options.exits, anomalies: options.anomalies}
+    options = %{
+      options
+      | traces: options.traces and options.exits,
+        anomalies: options.anomalies,
+        max_recording: options.max_recording || configured_max_recording()
+    }
+
+    if options.stop_after && options.stop_after > options.max_recording + 0.001 do
+      raise ArgumentError,
+            ":stop_after is #{Human.duration(options.stop_after)}, and a recording may run " <>
+              "#{Human.duration(options.max_recording)} at most (:max_recording)"
+    end
+
+    options
+  end
+
+  @day 86_400.0
+
+  # The most a recording may be unless a collector is told: the
+  # application's, if it says, and otherwise a day.
+  defp configured_max_recording do
+    case Application.get_env(:timeless_beam_acct, :max_recording) do
+      nil ->
+        @day
+
+      written ->
+        case Clock.parse_span(written) do
+          {:ok, seconds} when seconds > 0 ->
+            seconds
+
+          _ ->
+            raise ArgumentError,
+                  "config :timeless_beam_acct, max_recording: #{inspect(written)} is not a length of time"
+        end
+    end
   end
 
   @doc "The name this host goes by."

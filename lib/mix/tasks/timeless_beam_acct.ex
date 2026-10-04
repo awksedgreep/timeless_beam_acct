@@ -94,10 +94,12 @@ defmodule Mix.Tasks.TimelessBeamAcct do
   @spec collector_switches() :: keyword()
   def collector_switches do
     for {key, value} <- Map.from_struct(%Options{}),
-        key not in [:name, :exit_levels, :trace_roots, :long_message_queue],
+        key not in ([:name, :exit_levels, :trace_roots, :long_message_queue] ++
+                      [:stop_after, :max_recording, :recorded_by]),
         type = switch(key, value) do
       {key, type}
     end ++
+      [stop_after: :string, max_recording: :string, recorded_by: :string] ++
       [metrics_url: :string, logs_url: :string, traces_url: :string, token: :string] ++
       [metrics_token: :string, logs_token: :string, traces_token: :string] ++
       [timeout: :string, backlog: :integer]

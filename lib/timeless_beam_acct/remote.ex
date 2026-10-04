@@ -517,6 +517,14 @@ defmodule TimelessBeamAcct.Remote do
   @spec diagnostics(node(), keyword()) :: :ok | {:error, reason()}
   def diagnostics(node, opts \\ []), do: printed(node, :diagnosed, [opts], & &1)
 
+  @doc "Make a recording in a node run longer. See `TimelessBeamAcct.extend/2`."
+  @spec extend(node(), String.t() | number(), atom()) :: {:ok, float()} | {:error, reason()}
+  def extend(node, more, name \\ TimelessBeamAcct) do
+    with :ok <- reached(node),
+         {:ok, answer} <- call(node, TimelessBeamAcct, :extend, [name, more]),
+         do: answer
+  end
+
   @doc "What the collector in a node has to say of itself. See `TimelessBeamAcct.status/1`."
   @spec status(node(), atom()) :: {:ok, map() | nil} | {:error, reason()}
   def status(node, name \\ TimelessBeamAcct) do

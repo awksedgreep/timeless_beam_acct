@@ -28,6 +28,32 @@ defmodule TimelessBeamAcct.Watch.Memory do
   @impl true
   def spacing(%__MODULE__{}, _until), do: {nil, nil}
 
+  # A recording's records are written to the sink, and are not kept with
+  # the records of processes: what is in memory knows only its own.
+  @impl true
+  def recordings(%__MODULE__{live: live}, from, to) do
+    case Live.status(live) do
+      {:ok, %{recording: %{started: started} = recording, options: options}}
+      when started >= from and started <= to ->
+        {:ok,
+         [
+           %{
+             id: recording.recording,
+             node: options.node,
+             host: options.host,
+             started: started,
+             stop_at: recording.stop_at,
+             ended: nil,
+             reason: nil,
+             by: recording.by
+           }
+         ]}
+
+      _ ->
+        {:ok, []}
+    end
+  end
+
   @impl true
   def timeline(%__MODULE__{}, _from, _to), do: {[], 10.0}
 

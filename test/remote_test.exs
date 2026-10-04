@@ -95,6 +95,35 @@ defmodule TimelessBeamAcct.RemoteTest do
     end
   end
 
+  test "a recording put into a node ends by itself, and can be made longer first", context do
+    if context.cookie do
+      peer = elixir_node(context.cookie)
+      sink = to_me()
+
+      assert {:ok, _} =
+               Remote.attach(peer,
+                 sink: sink,
+                 interval: 3600,
+                 process_interval: 3600,
+                 stop_after: 1,
+                 max_recording: 3
+               )
+
+      assert {:ok, %{recording: %{stop_at: first}}} = Remote.status(peer)
+      assert {:ok, later} = Remote.extend(peer, 1)
+      assert_in_delta later - first, 1.0, 0.01
+      assert {:error, why} = Remote.extend(peer, "1h")
+      assert why =~ "at most"
+
+      Process.sleep(2_600)
+      refute Remote.attached?(peer)
+      assert {:ok, nil} = Remote.status(peer)
+      # A node it ended in can be recorded again.
+      assert {:ok, _} = Remote.attach(peer, sink: sink, interval: 3600, process_interval: 3600)
+      assert :ok = Remote.detach(peer)
+    end
+  end
+
   test "the collector stays when the process that attached it is gone", context do
     if context.cookie do
       peer = elixir_node(context.cookie)

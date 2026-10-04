@@ -48,6 +48,23 @@ defmodule TimelessBeamAcct.Watch.Store do
   @typedoc "A process that ended badly: by raising, or by being killed."
   @type incident :: %{at: float(), error: boolean()}
 
+  @typedoc """
+  A recording: a collector that was told how long to run
+  (`TimelessBeamAcct.Recording`), from the records it wrote of itself.
+  `ended` and `reason` are `nil` while it runs, or if its node ended
+  first.
+  """
+  @type recording :: %{
+          id: String.t(),
+          node: String.t(),
+          host: String.t(),
+          started: float(),
+          stop_at: float(),
+          ended: float() | nil,
+          reason: String.t() | nil,
+          by: String.t() | nil
+        }
+
   @typedoc "How far to look, and for how many."
   @type reach :: %{until: float(), span: float(), limit: pos_integer()}
 
@@ -112,8 +129,14 @@ defmodule TimelessBeamAcct.Watch.Store do
   @callback jobs(t(), reach(), width :: non_neg_integer(), wanted :: (job() -> boolean())) ::
               {:ok, [job()]} | {:error, String.t()}
 
+  @doc """
+  The recordings that began between two moments, the last to begin first.
+  """
+  @callback recordings(t(), from :: float(), to :: float()) ::
+              {:ok, [recording()]} | {:error, String.t()}
+
   for {name, arity} <-
-        [range: 1, at: 4, history: 6, spacing: 2, timeline: 3] ++
+        [range: 1, at: 4, history: 6, spacing: 2, timeline: 3, recordings: 3] ++
           [incidents: 4, exits: 3, record: 4, jobs: 4] do
     args = Macro.generate_arguments(arity - 1, __MODULE__)
 
@@ -166,6 +189,41 @@ defmodule TimelessBeamAcct.Watch.Store do
     |> Enum.group_by(& &1.trace_id)
     |> Enum.filter(&match?({_trace, [_, _ | _]}, &1))
     |> Enum.map(fn {_trace, all} -> job(all, width) end)
+    |> Enum.sort_by(& &1.started, :desc)
+  end
+
+  @doc """
+  Recordings, from the records they wrote of themselves: a `started` and,
+  if it came, an `ended`, of the same `recording`. Each record is
+  `{epoch_seconds, fields}`.
+  """
+  @spec recordings_of([{float(), map()}]) :: [recording()]
+  def recordings_of(records) do
+    records
+    |> Enum.filter(fn {_at, fields} -> fields["kind"] == "recording" end)
+    |> Enum.group_by(fn {_at, fields} -> fields["recording"] end)
+    |> Enum.flat_map(fn {id, said} ->
+      ended = Enum.find(said, fn {_, fields} -> fields["status"] == "ended" end)
+
+      case Enum.find(said, fn {_, fields} -> fields["status"] == "started" end) do
+        nil ->
+          []
+
+        {at, fields} ->
+          [
+            %{
+              id: id,
+              node: fields["node"] || "",
+              host: fields["host"] || "",
+              started: number(fields["started"]) || at,
+              stop_at: number(fields["stop_at"]) || at,
+              ended: ended && elem(ended, 0),
+              reason: ended && elem(ended, 1)["reason"],
+              by: fields["by"]
+            }
+          ]
+      end
+    end)
     |> Enum.sort_by(& &1.started, :desc)
   end
 

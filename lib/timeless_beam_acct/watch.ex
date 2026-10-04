@@ -19,6 +19,7 @@ defmodule TimelessBeamAcct.Watch do
   | `:token`, `:metrics_token`, `:logs_token`, `:traces_token` | those the collector writes with | tokens that may read |
   | `:store_node`, `:host` | those of the collector | whose series are read, of a store that has several nodes' |
   | `:at` | `"now"` | the moment to begin at |
+  | `:recording` | | a recording's id: its node, at its end, with the timeline long enough to have all of it |
   | `:view` | `:groups` | `:groups`, `:processes`, `:jobs`, or `:exits` |
   | `:refresh` | `2` | seconds between looks at now |
   | `:print` | | `"120x40"`: draw the screen once, as text, and return |
@@ -92,14 +93,17 @@ defmodule TimelessBeamAcct.Watch do
   def new(opts) do
     now = Clock.now()
 
-    with {:ok, refresh} <- refresh(opts[:refresh] || 2),
+    with {:ok, opts} <- recording(opts, now),
+         {:ok, refresh} <- refresh(opts[:refresh] || 2),
          {:ok, view} <- view(opts[:view] || :groups),
          {:ok, at} <- moment(opts[:at] || "now", now),
          {:ok, live, status} <- live(opts),
          {:ok, store, said} <- store(opts, live, status) do
       options = status && status[:options]
 
-      state = %{State.new(at, @spacing) | tab: view, message: said}
+      state =
+        %{State.new(at, @spacing) | tab: view, message: said}
+        |> State.fit(opts[:span])
 
       {:ok,
        %__MODULE__{
@@ -114,6 +118,50 @@ defmodule TimelessBeamAcct.Watch do
          },
          paced: options && {nil, {options.interval / 1, options.process_interval / 1}}
        }}
+    end
+  end
+
+  @plane_keys [:metrics_url, :logs_url, :traces_url]
+  @token_keys [:token, :metrics_token, :logs_token, :traces_token]
+
+  # How far back a recording is looked for.
+  @recordings_back 31 * 86_400.0
+
+  # A recording, found in the logs plane by its id: what is watched is its
+  # node, at its end, or now if it is running; and the timeline is long
+  # enough to have the whole of it.
+  defp recording(opts, now) do
+    case opts[:recording] do
+      nil ->
+        {:ok, opts}
+
+      id ->
+        planes =
+          Keyword.take(opts, @plane_keys ++ @token_keys ++ [:host, :timeout])
+          |> Planes.new()
+
+        with {:ok, planes} <- planes,
+             {:ok, found} <- Store.recordings(planes, now - @recordings_back, now) do
+          case Enum.filter(found, &String.starts_with?(&1.id, id)) do
+            [found] ->
+              ended = found.ended || if(found.stop_at < now, do: found.stop_at)
+              at = if ended, do: Integer.to_string(trunc(ended)), else: "now"
+
+              {:ok,
+               opts
+               |> Keyword.merge(store_node: found.node, at: at)
+               |> Keyword.put(:span, (ended || now) - found.started)
+               |> Keyword.delete(:recording)}
+
+            [] ->
+              {:error, "No recording #{id} began in the last 31 days in #{planes.logs}."}
+
+            several ->
+              {:error,
+               "#{id} is the beginning of #{length(several)} recordings' ids: " <>
+                 Enum.map_join(several, ", ", & &1.id)}
+          end
+        end
     end
   end
 
@@ -138,9 +186,6 @@ defmodule TimelessBeamAcct.Watch do
         with {:ok, status} <- Live.status(live), do: {:ok, live, status}
     end
   end
-
-  @plane_keys [:metrics_url, :logs_url, :traces_url]
-  @token_keys [:token, :metrics_token, :logs_token, :traces_token]
 
   # The store: the planes that were said, or those the collector writes
   # to, or what it keeps in memory.

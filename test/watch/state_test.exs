@@ -237,6 +237,17 @@ defmodule TimelessBeamAcct.Watch.StateTest do
     assert state.message == "There is nothing stored to go to."
   end
 
+  test "the timeline is drawn out to have a recording" do
+    state = State.new(nil, 10)
+    assert State.fit(state, nil) == state
+    assert State.window(State.fit(state, 90)) == 600.0
+    assert State.window(State.fit(state, 3600)) == 3600.0
+    assert State.window(State.fit(state, 3601)) == 6 * 3600.0
+    assert State.window(State.fit(state, 8 * 3600)) == 86_400.0
+    # As far as it can be.
+    assert State.window(State.fit(state, 30 * 86_400)) == 7 * 86_400.0
+  end
+
   test "the timeline is drawn out and drawn in" do
     state = State.new(nil, 10)
     assert State.window(state) == 3600.0

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **Recordings.** A collector told `stop_after: "1h"` ends by itself when
+  its time is up, flushing what it has as a stopped collector does. Its
+  timer is in the node, so it ends whether or not anyone is there to stop
+  it. A day at most unless `:max_recording` (or the application's
+  `:max_recording`) says more; `TimelessBeamAcct.extend/2` makes one run
+  longer, up to that. A recording among the children of a supervisor is
+  not started again when it ends. `status/1` says when it is to end.
+- A recording writes a record when it begins and one when it ends
+  (`kind` `recording`), with its id, its length, who started it, and how
+  it ended: its time ran out, it was stopped, or what it ran in went
+  first.
+- `mix timeless_beam_acct.record NODE --for 1h`: a recording put into a
+  running node; `--extend` and `--stop` while it runs. `mix
+  timeless_beam_acct.recordings` lists the recordings in a logs plane,
+  and `mix timeless_beam_acct.watch --recording ID` opens one.
+
 ## 0.2.0
 
 A node in a terminal, and what a day of a node did to the planes.

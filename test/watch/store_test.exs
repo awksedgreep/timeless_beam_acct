@@ -63,6 +63,55 @@ defmodule TimelessBeamAcct.Watch.StoreTest do
     assert Store.jobs_of([], 80) == []
   end
 
+  test "recordings are made of the records they wrote of themselves" do
+    started = fn id, at, more ->
+      {at,
+       Map.merge(
+         %{
+           "kind" => "recording",
+           "status" => "started",
+           "recording" => id,
+           "node" => "app@ohm",
+           "host" => "ohm",
+           "started" => at,
+           "stop_at" => at + 3600
+         },
+         more
+       )}
+    end
+
+    ended = fn id, at, reason ->
+      {at, %{"kind" => "recording", "status" => "ended", "recording" => id, "reason" => reason}}
+    end
+
+    records = [
+      started.("a", 100.0, %{"by" => "mark@ohm"}),
+      ended.("a", 3700.0, "time"),
+      started.("b", 5000.0, %{}),
+      # An end with no beginning in reach is no recording.
+      ended.("c", 50.0, "stopped"),
+      # Nor is a record of something else.
+      {200.0, %{"kind" => "exit", "recording" => "a"}}
+    ]
+
+    assert [b, a] = Store.recordings_of(records)
+
+    assert a == %{
+             id: "a",
+             node: "app@ohm",
+             host: "ohm",
+             started: 100.0,
+             stop_at: 3700.0,
+             ended: 3700.0,
+             reason: "time",
+             by: "mark@ohm"
+           }
+
+    # Running, or its node ended first: nothing says it ended.
+    assert %{id: "b", ended: nil, reason: nil, by: nil, stop_at: 8600.0} = b
+    assert Store.recordings_of([]) == []
+  end
+
   test "the spacing of samples is the gap that half of them are no further apart than" do
     every_ten = for n <- 0..9, do: {100.0 + 10 * n, 1.0}
     assert Store.spacing_of(every_ten) == 10.0
@@ -91,6 +140,7 @@ defmodule TimelessBeamAcct.Watch.StoreTest do
     assert Store.exits(store, reach, fn _ -> true end) == {:ok, []}
     assert Store.jobs(store, reach, 80, fn _ -> true end) == {:ok, []}
     assert Store.record(store, "A", "<0.1.0>", 0.0) == nil
+    assert Store.recordings(store, 0.0, 1.0) == {:ok, []}
   end
 
   test "a node is asked, and one that cannot be says so" do

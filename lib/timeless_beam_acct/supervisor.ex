@@ -12,7 +12,7 @@ defmodule TimelessBeamAcct.Supervisor do
 
   use Supervisor
 
-  alias TimelessBeamAcct.{Collector, Options, Tracer, Writer}
+  alias TimelessBeamAcct.{Collector, Options, Recording, Tracer, Writer}
 
   @spec start_link(Options.t()) :: Supervisor.on_start()
   def start_link(%Options{} = options) do
@@ -32,6 +32,17 @@ defmodule TimelessBeamAcct.Supervisor do
          ]}
     }
 
-    Supervisor.init([{Writer, options}, collection], strategy: :one_for_one)
+    # A recording is the last child, and ends first. When its time runs
+    # out it ends normally, and its supervisor, this, with it.
+    case options.stop_after do
+      nil ->
+        Supervisor.init([{Writer, options}, collection], strategy: :one_for_one)
+
+      _length ->
+        Supervisor.init([{Writer, options}, collection, {Recording, options}],
+          strategy: :one_for_one,
+          auto_shutdown: :any_significant
+        )
+    end
   end
 end

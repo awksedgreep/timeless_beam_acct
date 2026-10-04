@@ -578,6 +578,50 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     end
   end
 
+  describe "recordings" do
+    test "are read from the logs plane, of every node, by when they began" do
+      plane =
+        plane([
+          {"/select/logsql/query",
+           lines([
+             record(3700.0, %{
+               "kind" => "recording",
+               "status" => "ended",
+               "service" => "recording",
+               "recording" => "abc",
+               "reason" => "stopped"
+             }),
+             record(100.0, %{
+               "kind" => "recording",
+               "status" => "started",
+               "service" => "recording",
+               "recording" => "abc",
+               "node" => "other@ohm",
+               "started" => 100.0,
+               "stop_at" => 7300.0
+             })
+           ])}
+        ])
+
+      # A node is said, and its recordings are not only its own.
+      assert {:ok, [recording]} = Store.recordings(store(plane), 0.0, 9000.0)
+
+      assert %{id: "abc", node: "other@ohm", started: 100.0, ended: 3700.0, reason: "stopped"} =
+               recording
+
+      assert [%{"service" => "recording", "start" => "0", "end" => "9000", "order" => "desc"}] =
+               asked(plane, "/select/logsql/query")
+
+      refute Map.has_key?(hd(asked(plane, "/select/logsql/query")), "node")
+    end
+
+    test "say why they could not be read" do
+      plane = plane([{"/select/logsql/query", {500, "no"}}])
+      assert {:error, why} = Store.recordings(store(plane), 0.0, 9.0)
+      assert why =~ "answered 500"
+    end
+  end
+
   describe "jobs" do
     test "are the traces of more than one process, each read in full" do
       plane =
