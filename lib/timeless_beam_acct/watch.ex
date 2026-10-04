@@ -145,7 +145,14 @@ defmodule TimelessBeamAcct.Watch do
              {:ok, found} <- Store.recordings(planes, now - @recordings_back, now) do
           case Enum.filter(found, &String.starts_with?(&1.id, id)) do
             [found] ->
-              ended = found.ended || if(found.stop_at < now, do: last_recorded(planes, found))
+              # Its node ended before it did: its time ran out with nothing
+              # written of its end, or its node, asked, is not making it.
+              lost = found.stop_at < now or Store.making(found) == :ended
+
+              ended =
+                found.ended ||
+                  if(lost, do: last_recorded(planes, %{found | stop_at: min(found.stop_at, now)}))
+
               at = if ended, do: Integer.to_string(trunc(ended)), else: "now"
 
               {:ok,

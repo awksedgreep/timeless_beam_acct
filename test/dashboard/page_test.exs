@@ -144,6 +144,24 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     refute html =~ "No recordings"
   end
 
+  test "one whose node, asked, is not making it, is not shown as recording" do
+    lost = %{
+      id: "eeeeeeeeeeee",
+      node: "app@ohm",
+      host: "ohm",
+      started: @now - 600,
+      stop_at: @now + 3000,
+      ended: nil,
+      reason: nil,
+      by: nil,
+      gone: true
+    }
+
+    html = page(recordings: [lost])
+    assert html =~ ~s(badge badge-warning">its node ended first)
+    refute html =~ "so far"
+  end
+
   test "what the planes hold, and how small" do
     storage = [
       %{

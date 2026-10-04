@@ -256,7 +256,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           {:ok, planes} ->
             case Store.recordings(planes, now - @listed, now) do
               {:ok, recordings} ->
-                {recordings, nil}
+                {Enum.map(recordings, &gone(&1, now)), nil}
 
               {:error, why} ->
                 {[],
@@ -298,6 +298,19 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     end
 
     defp configured, do: Application.get_env(:timeless_beam_acct, :dashboard, [])
+
+    # A recording that has said nothing of its end, and whose time is not
+    # up, is asked after where its node can be asked: one whose node was
+    # started again since is not shown as recording until its time would
+    # have run out.
+    defp gone(%{ended: nil, stop_at: stop_at} = recording, now) when stop_at > now do
+      case Store.making(recording) do
+        :ended -> Map.put(recording, :gone, true)
+        _recording_or_unknown -> recording
+      end
+    end
+
+    defp gone(recording, _now), do: recording
 
     # The longest a recording may be, as this application says: told to
     # the node recorded, which would otherwise keep its own, and let a
@@ -614,6 +627,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       """
     end
 
+    defp badge(%{gone: true}, _now), do: "badge-warning"
     defp badge(%{ended: ended, reason: "time"}, _now) when is_number(ended), do: "badge-success"
 
     defp badge(%{ended: ended, reason: "stopped"}, _now) when is_number(ended),
@@ -628,6 +642,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       Float.round(min(max((now - recording.started) / length, 0.0), 1.0) * 100, 1)
     end
 
+    defp length_of(%{gone: true}, _now), do: "-"
+
     defp length_of(%{ended: ended, started: started}, _now) when is_number(ended),
       do: Human.duration(ended - started)
 
@@ -636,6 +652,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     defp length_of(_recording, _now), do: "-"
 
+    defp how(%{gone: true}, _now), do: "its node ended first"
     defp how(%{ended: ended, reason: "time"}, _now) when is_number(ended), do: "its time ran out"
     defp how(%{ended: ended, reason: "stopped"}, _now) when is_number(ended), do: "it was stopped"
     defp how(%{ended: ended}, _now) when is_number(ended), do: "what it ran in went first"

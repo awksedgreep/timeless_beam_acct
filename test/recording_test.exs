@@ -187,4 +187,30 @@ defmodule TimelessBeamAcct.RecordingTest do
       Application.delete_env(:timeless_beam_acct, :max_recording)
     end
   end
+
+  describe "whether a recording is being made still" do
+    alias TimelessBeamAcct.Watch.Store
+
+    defp of(id, node \\ Atom.to_string(node())), do: %{id: id, node: node}
+
+    test "its node says so, while it is" do
+      # Under the name a recording is made under, which the node is asked of.
+      {:ok, sup} =
+        TimelessBeamAcct.start_link(options(TimelessBeamAcct, stop_after: "1h"))
+
+      %{recording: %{recording: id}} = TimelessBeamAcct.status()
+
+      assert Store.making(of(id)) == :recording
+      # Another recording's id, on the same node: that one is not being made.
+      assert Store.making(of("0000000000000000")) == :ended
+
+      TimelessBeamAcct.stop()
+      refute Process.alive?(sup)
+      assert Store.making(of(id)) == :ended
+    end
+
+    test "a node that is not connected to this one is not known of" do
+      assert Store.making(of("0000000000000000", "nobody@nowhere")) == :unknown
+    end
+  end
 end

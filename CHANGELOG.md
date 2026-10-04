@@ -64,6 +64,11 @@
   `start: true`: a collector that started with the application and ran
   until it was stopped, which is not how it is meant to be run. `--sink`
   is said with `--always-on`, and refused without it.
+- A recording whose node ended without warning, and was started again,
+  is no longer shown as recording until its time would have run out.
+  The page asks the node, where it is connected to it
+  (`TimelessBeamAcct.Watch.Store.making/1`), and opens such a recording
+  where what it wrote ends.
 - The page says plainly when the planes are not configured, or do not
   answer, above the form, and **Record** is not offered until they do: a
   recording is written to them, and one started without them had

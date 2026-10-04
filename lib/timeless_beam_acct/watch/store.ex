@@ -207,6 +207,49 @@ defmodule TimelessBeamAcct.Watch.Store do
     |> Enum.sort_by(& &1.started, :desc)
   end
 
+  # The names a recording is made under: the usual one, and the one the
+  # page records under beside a collector that is not a recording.
+  @recording_names [TimelessBeamAcct, TimelessBeamAcct.Recorded]
+
+  @doc """
+  Whether a recording that has said nothing of its end is being made
+  still, as far as this node can tell. Its records cannot say: a node
+  that ends without warning writes no `ended`, and its recording looks
+  as if it runs until its time would have run out.
+
+  `:recording` if its node says it is making it; `:ended` if its node is
+  connected to this one and is not, so it ended with a node that has been
+  started again since; `:unknown` if its node is not one this node is
+  connected to, or did not answer.
+  """
+  @spec making(recording(), timeout()) :: :recording | :ended | :unknown
+  def making(%{node: name, id: id}, timeout \\ 2_000) do
+    case Enum.find([node() | Node.list()], &(Atom.to_string(&1) == name)) do
+      nil ->
+        :unknown
+
+      node ->
+        answers = for collector <- @recording_names, do: status(node, collector, timeout)
+
+        cond do
+          Enum.any?(answers, &(&1 == :unknown)) -> :unknown
+          Enum.any?(answers, &match?(%{recording: %{recording: ^id}}, &1)) -> :recording
+          true -> :ended
+        end
+    end
+  end
+
+  # What a collector says of itself; `nil` from a node that has none, and
+  # never had this package put into it; `:unknown` from one that did not
+  # answer.
+  defp status(node, collector, timeout) do
+    :erpc.call(node, TimelessBeamAcct, :status, [collector], timeout)
+  catch
+    :error, {:exception, :undef, _} -> nil
+    :error, {:exception, %UndefinedFunctionError{}, _} -> nil
+    _kind, _reason -> :unknown
+  end
+
   @doc """
   Recordings, from the records they wrote of themselves: a `started` and,
   if it came, an `ended`, of the same `recording`. Each record is
