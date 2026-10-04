@@ -280,7 +280,7 @@ and `mix` agree on it.
 - [x] **A4 — `mix timeless_beam_acct.record NODE --for 1h`.** (S)
   Attaches a collector with `stop_after`, says when it will end, and
   returns. `watch` gains `--recording`, which opens one by its start.
-- [ ] **A5 — What a recording will cost, said in advance.** (S) From the
+- [x] **A5 — What a recording will cost, said in advance.** (S) From the
   node's processes, its exits a second, and the measured costs (L2, L3),
   a sentence: about so much of a core, about so much an hour on the
   planes. For the confirmation (C1) and for `record`.

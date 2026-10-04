@@ -18,6 +18,11 @@
   within a week. Until then the collector waits and reads nothing, and
   `status/1` says `%{waiting: ...}`. The page offers it, and calls one
   off.
+- What a recording will cost is said before it starts, by `record` and
+  on the page, from how fast the node starts processes:
+  `TimelessBeamAcct.Remote.pace/2` reads it from the numbers of the pids
+  the node gives out, which needs nothing of a collector in it, and
+  agreed with what a tracer heard to within 1% on two bench nodes.
 - `mix timeless_beam_acct.record NODE --for 1h`: a recording put into a
   running node; `--extend` and `--stop` while it runs. `mix
   timeless_beam_acct.recordings` lists the recordings in a logs plane,

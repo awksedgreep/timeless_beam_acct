@@ -71,6 +71,11 @@ defmodule Mix.Tasks.TimelessBeamAcct.Record do
       |> Keyword.merge(name: name, stop_after: length)
       |> Keyword.put_new(:recorded_by, by())
 
+    case Remote.pace(node, 2) do
+      {:ok, rate} -> Mix.shell().info(TimelessBeamAcct.Recording.estimate(rate).said)
+      {:error, _} -> :ok
+    end
+
     case Remote.attach(node, opts) do
       {:ok, _collector} ->
         case Remote.status(node, name) do

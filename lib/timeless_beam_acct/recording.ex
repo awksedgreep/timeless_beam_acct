@@ -49,6 +49,33 @@ defmodule TimelessBeamAcct.Recording do
 
   alias TimelessBeamAcct.{Clock, Event, Human, Options, Tick, Writer}
 
+  @doc """
+  What recording a node will cost, from how fast it starts processes:
+  `rate` a second, as `TimelessBeamAcct.Remote.pace/2` measures it.
+
+  The figures are those measured (README, "Cost"): 4 to 6% of one core
+  where 65 processes end a second, and about 85 bytes in the planes for
+  each that ends, its record and its span, beside the samples, which are
+  a few MiB an hour whatever the node does. A node that ends fewer
+  processes costs less. Said as an estimate, which it is.
+  """
+  @spec estimate(number()) :: %{cpu_pct: float(), mib_an_hour: float(), said: String.t()}
+  def estimate(rate) when is_number(rate) and rate >= 0 do
+    # Per process that ends a second, of one core, from 4 to 6% at 65; and
+    # what does not depend on them: the readings, the sweep.
+    cpu = 0.5 + rate * 0.075
+    mib = (rate * 3600 * 85 + 4 * 1024 * 1024) / (1024 * 1024)
+
+    %{
+      cpu_pct: Float.round(cpu, 1),
+      mib_an_hour: Float.round(mib, 1),
+      said:
+        "This node starts about #{round(rate)} processes a second. Recording it is likely " <>
+          "to cost about #{Human.fixed(cpu, 1)}% of one core, and about " <>
+          "#{Human.bytes(mib * 1024 * 1024)} an hour in the planes."
+    }
+  end
+
   @doc false
   def child_spec(%Options{} = options) do
     %{

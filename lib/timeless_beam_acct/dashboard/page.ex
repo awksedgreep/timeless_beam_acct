@@ -40,7 +40,12 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     @impl true
     def mount(_params, _session, socket) do
-      {:ok, socket |> assign(said: nil, watch: nil, extra: nil, extra_data: nil) |> read()}
+      socket =
+        socket
+        |> assign(said: nil, watch: nil, extra: nil, extra_data: nil, estimate: nil, paced: nil)
+        |> read()
+
+      {:ok, socket}
     end
 
     # A recording is opened by its id in the query string, so that it can
@@ -73,6 +78,23 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     end
 
     def handle_refresh(socket), do: {:noreply, read(socket)}
+
+    # How fast the chosen node starts processes is measured over a few
+    # seconds, apart from the page, and is what the form says of the cost.
+    @impl true
+    def handle_info({ref, {:paced, node, paced}}, socket) when is_reference(ref) do
+      Process.demonitor(ref, [:flush])
+
+      estimate =
+        case paced do
+          {:ok, rate} -> TimelessBeamAcct.Recording.estimate(rate).said
+          {:error, _} -> nil
+        end
+
+      {:noreply, assign(socket, estimate: estimate, paced: node)}
+    end
+
+    def handle_info(_message, socket), do: {:noreply, socket}
 
     @impl true
     def handle_event("key", %{"key" => key} = params, %{assigns: %{watch: %{} = watch}} = socket) do
@@ -201,6 +223,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
             end
         end
 
+      pace(socket, node, collecting)
+
       assign(socket,
         links: Map.new(recordings, &{&1.id, "?" <> URI.encode_query(recording: &1.id)}),
         node: node,
@@ -217,6 +241,15 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     # of the moment.
     defp showing(socket, watch, extra),
       do: assign(socket, watch: watch, extra: extra, extra_data: Opened.read_extra(watch, extra))
+
+    # Measured once for each node chosen, where a recording could be started.
+    defp pace(socket, node, collecting) do
+      if not collecting and socket.assigns[:paced] != node and connected?(socket) do
+        Task.async(fn -> {:paced, node, Remote.pace(node, 3)} end)
+      end
+
+      :ok
+    end
 
     defp configured, do: Application.get_env(:timeless_beam_acct, :dashboard, [])
 
@@ -313,7 +346,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
               a record only of processes that failed (less to store on a busy node)
             </label>
           </div>
-          <p>
+          <p :if={@estimate}>{@estimate} It ends by itself; a day at most.</p>
+          <p :if={!@estimate}>
             A recording costs a node about 5% of one core where 65 processes end a second, and
             less where fewer do. It ends by itself; a day at most.
           </p>

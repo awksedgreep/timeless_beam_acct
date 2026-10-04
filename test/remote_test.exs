@@ -124,6 +124,30 @@ defmodule TimelessBeamAcct.RemoteTest do
     end
   end
 
+  test "how fast a node starts processes is measured, with nothing of a collector in it",
+       context do
+    if context.cookie do
+      peer = elixir_node(context.cookie)
+      # A process in the peer for each call cast to it: two hundred a
+      # second, for a little longer than the second measured.
+      caster =
+        Task.async(fn ->
+          for _ <- 1..300 do
+            :erpc.cast(peer, :erlang, :is_atom, [:x])
+            Process.sleep(5)
+          end
+        end)
+
+      assert {:ok, rate} = Remote.pace(peer, 1)
+      Task.await(caster, 10_000)
+      assert rate > 50 and rate < 1000
+      refute Remote.attached?(peer)
+
+      assert {:error, _} =
+               Remote.pace(:"nobody_#{System.unique_integer([:positive])}@localhost", 0.1)
+    end
+  end
+
   test "the collector stays when the process that attached it is gone", context do
     if context.cookie do
       peer = elixir_node(context.cookie)

@@ -16,6 +16,7 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
       collecting: false,
       waiting: nil,
       links: %{},
+      estimate: nil,
       recordings: [],
       error: nil
     }
@@ -52,6 +53,10 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     assert html =~ ~s(name="other")
     assert html =~ ~s(name="start_at")
     assert html =~ "a day at most"
+    assert html =~ "about 5% of one core where 65 processes end"
+    measured = page(estimate: "This node starts about 90 processes a second.")
+    assert measured =~ "This node starts about 90 processes a second."
+    refute measured =~ "where 65 processes end"
     # Not where a collector is running already.
     refute page(collecting: true) =~ ~s(phx-submit="record")
     assert html =~ "No recordings in the last 31 days."

@@ -518,6 +518,38 @@ defmodule TimelessBeamAcct.Remote do
   @spec diagnostics(node(), keyword()) :: :ok | {:error, reason()}
   def diagnostics(node, opts \\ []), do: printed(node, :diagnosed, [opts], & &1)
 
+  @doc """
+  How many processes a node starts a second, over `seconds`: the numbers
+  of the pids it gives out climb with each that is started. Asked of the
+  VM alone, so it needs nothing of a collector in the node, and costs it
+  two processes that end at once.
+  """
+  @spec pace(node(), number()) :: {:ok, float()} | {:error, reason()}
+  def pace(node, seconds \\ 3) when is_number(seconds) and seconds > 0 do
+    with :ok <- reached(node),
+         {:ok, first} <- pid_number(node) do
+      Process.sleep(round(seconds * 1000))
+
+      with {:ok, last} <- pid_number(node), do: {:ok, max(last - first, 0) / seconds}
+    end
+  end
+
+  defp pid_number(node) do
+    with {:ok, limit} <- call(node, :erlang, :system_info, [:process_limit]),
+         {:ok, pid} <- call(node, :erlang, :spawn, [:erlang, :is_atom, [:pace]]) do
+      [_node, number, serial] =
+        pid
+        |> :erlang.pid_to_list()
+        |> to_string()
+        |> String.trim("<")
+        |> String.trim(">")
+        |> String.split(".")
+        |> Enum.map(&String.to_integer/1)
+
+      {:ok, number + serial * limit}
+    end
+  end
+
   @doc "Make a recording in a node run longer. See `TimelessBeamAcct.extend/2`."
   @spec extend(node(), String.t() | number(), atom()) :: {:ok, float()} | {:error, reason()}
   def extend(node, more, name \\ TimelessBeamAcct) do

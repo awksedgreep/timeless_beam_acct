@@ -156,6 +156,17 @@ defmodule TimelessBeamAcct.RecordingTest do
     end
   end
 
+  test "what a recording will cost is said from how fast a node starts processes" do
+    idle = Recording.estimate(0)
+    busy = Recording.estimate(65)
+    assert idle.cpu_pct < 1.0
+    # As measured: 4 to 6% of one core at 65 a second.
+    assert busy.cpu_pct >= 4.0 and busy.cpu_pct <= 6.0
+    assert busy.mib_an_hour > idle.mib_an_hour
+    assert busy.said =~ "starts about 65 processes a second"
+    assert busy.said =~ "% of one core"
+  end
+
   test "how long a recording may run is checked when it starts" do
     assert_raise ArgumentError,
                  ~r/:stop_after is 2d00h, and a recording may run 1d00h at most/,
