@@ -36,9 +36,10 @@
   clicked to go to a moment, the four views, and `watch`'s keys; and
   three of the page's own, `5` to `7`: the node over the timeline, what
   the VM remarked on, and what the collector said of itself. And a
-  Storage card: what each plane holds, raw, compressed, and with its
-  indexes, a byte figure for each item, and how much smaller it is, from
-  the planes' own counts (`TimelessBeamAcct.Watch.Planes.storage/1`). `phoenix_live_dashboard` and
+  Storage card: what each plane holds, raw and compressed, a byte figure
+  for each item, and the compression, raw against compressed data with
+  the indexes left out; what is on disk with the indexes is beside it.
+  From the planes' own counts (`TimelessBeamAcct.Watch.Planes.storage/1`). `phoenix_live_dashboard` and
   `phoenix_live_view` are optional dependencies, and the page is
   compiled only where they are.
 

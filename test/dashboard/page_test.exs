@@ -167,9 +167,11 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     html = page(storage: storage)
     assert html =~ "Storage"
     assert html =~ "Exit records"
-    # 80 MB raw into 20 MB with the indexes: 75% smaller, 4:1.
-    assert html =~ "75% (4:1)"
-    assert html =~ "4.00 B"
+    # Of the data alone: 80 MB raw compressed to 4 MB is 95% smaller,
+    # 20:1; the 20 MB on disk with the indexes is beside it, not in it.
+    assert html =~ "95% (20:1)"
+    refute html =~ "75% (4:1)"
+    assert html =~ "0.80 B"
     assert html =~ "All of it"
     refute page([]) =~ "Exit records"
   end

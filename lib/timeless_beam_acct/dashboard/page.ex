@@ -467,8 +467,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     # What the planes hold, and how small they hold it.
     defp storage(assigns) do
       totals =
-        Enum.reduce(assigns.storage, %{raw: 0, disk: 0}, fn s, t ->
-          %{raw: t.raw + s.raw, disk: t.disk + s.disk}
+        Enum.reduce(assigns.storage, %{raw: 0, data: 0, disk: 0}, fn s, t ->
+          %{raw: t.raw + s.raw, data: t.data + s.data, disk: t.disk + s.disk}
         end)
 
       assigns = assign(assigns, totals: totals)
@@ -487,9 +487,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
               <th class="text-right">Raw</th>
               <th class="text-right">Compressed</th>
               <th class="text-right">Each</th>
-              <th class="text-right">With indexes</th>
-              <th class="text-right">Each</th>
-              <th class="text-right">Smaller by</th>
+              <th class="text-right">Compression</th>
+              <th class="text-right text-muted">On disk, with indexes</th>
               <th></th>
             </tr>
           </thead>
@@ -500,9 +499,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
               <td class="text-right">{Human.bytes(s.raw)}</td>
               <td class="text-right">{Human.bytes(s.data)}</td>
               <td class="text-right">{each(s.data, s.items)}</td>
-              <td class="text-right">{Human.bytes(s.disk)}</td>
-              <td class="text-right">{each(s.disk, s.items)}</td>
-              <td class="text-right"><strong>{smaller(s.raw, s.disk)}</strong></td>
+              <td class="text-right"><strong>{smaller(s.raw, s.data)}</strong></td>
+              <td class="text-right text-muted">{Human.bytes(s.disk)}</td>
               <td class="text-muted small">{s.detail}</td>
             </tr>
           </tbody>
@@ -511,12 +509,11 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
               <td><strong>All of it</strong></td>
               <td></td>
               <td class="text-right">{Human.bytes(@totals.raw)}</td>
+              <td class="text-right">{Human.bytes(@totals.data)}</td>
               <td></td>
-              <td></td>
-              <td class="text-right">{Human.bytes(@totals.disk)}</td>
-              <td></td>
-              <td class="text-right"><strong>{smaller(@totals.raw, @totals.disk)}</strong></td>
-              <td class="text-muted small">raw is as the planes count it before compressing</td>
+              <td class="text-right"><strong>{smaller(@totals.raw, @totals.data)}</strong></td>
+              <td class="text-right text-muted">{Human.bytes(@totals.disk)}</td>
+              <td class="text-muted small">raw, as the planes count it, against what it was compressed to</td>
             </tr>
           </tfoot>
         </table>
