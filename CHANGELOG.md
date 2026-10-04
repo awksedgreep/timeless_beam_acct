@@ -30,7 +30,8 @@
 - A page in Phoenix LiveDashboard, `TimelessBeamAcct.Dashboard.Page`,
   with `timeless_beam_acct_dashboard "/dashboard"` for the router: the
   recording running in the chosen node, with **Stop** and **+1 hour**,
-  or a form to start one, now or later; and the recordings of the logs
+  or a form to start one, now or later, beside a collector the
+  application runs already if it has one; and the recordings of the logs
   plane, each opened as `watch` opens one: the timeline across the top,
   clicked to go to a moment, the four views, and `watch`'s keys; and
   three of the page's own, `5` to `7`: the node over the timeline, what

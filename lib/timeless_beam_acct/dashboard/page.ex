@@ -29,6 +29,11 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     alias TimelessBeamAcct.Watch.{Live, Planes, State, Store}
 
     @lengths [{"15m", "15 minutes"}, {"1h", "1 hour"}, {"4h", "4 hours"}, {"8h", "8 hours"}]
+
+    # A collector the page starts where one is running already, that is
+    # not a recording: the application's own, started with it. The
+    # recording runs beside it, under this name, until its time is up.
+    @beside TimelessBeamAcct.Recorded
     @plane_keys [:metrics_url, :logs_url, :traces_url, :token, :metrics_token, :logs_token] ++
                   [:traces_token]
 
@@ -147,8 +152,10 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           _ -> []
         end
 
+      name = if socket.assigns.collecting, do: @beside, else: TimelessBeamAcct
+
       opts =
-        [stop_after: length, recorded_by: "LiveDashboard on #{node()}", sink: :http] ++
+        [name: name, stop_after: length, recorded_by: "LiveDashboard on #{node()}", sink: :http] ++
           start_at ++
           Keyword.take(configured(), @plane_keys) ++
           if(params["processes"] == "true", do: [], else: [max_processes: 0]) ++
@@ -173,7 +180,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     def handle_event("stop", _params, socket) do
       said =
-        case call(socket, TimelessBeamAcct, :stop, []) do
+        case call(socket, TimelessBeamAcct, :stop, [socket.assigns.recording_name]) do
           {:ok, :ok} -> "The recording was stopped."
           {:error, why} -> "It could not be stopped: #{why}"
           {:ok, other} -> "It could not be stopped: #{inspect(other)}"
@@ -184,7 +191,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     def handle_event("extend", %{"by" => by}, socket) do
       said =
-        case call(socket, TimelessBeamAcct, :extend, [TimelessBeamAcct, by]) do
+        case call(socket, TimelessBeamAcct, :extend, [socket.assigns.recording_name, by]) do
           {:ok, {:ok, stop_at}} -> "It now ends at #{Clock.format(stop_at)}."
           {:ok, {:error, why}} -> why
           {:error, why} -> why
@@ -199,13 +206,23 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       node = socket.assigns.page.node
       now = Clock.now()
 
-      {running, collecting, waiting} =
-        case Live.status(%Live{node: node}) do
-          {:ok, %{waiting: waiting}} -> {nil, true, waiting}
-          {:ok, %{recording: %{} = recording}} -> {recording, true, nil}
-          {:ok, _not_a_recording} -> {nil, true, nil}
-          _ -> {nil, false, nil}
+      # The collector of the usual name, and one the page started beside
+      # it: whichever of them is recording, or waiting to.
+      statuses =
+        for name <- [TimelessBeamAcct, @beside] do
+          {name, Live.status(%Live{node: node, name: name})}
         end
+
+      {recording_name, running, waiting} =
+        Enum.find_value(statuses, {TimelessBeamAcct, nil, nil}, fn
+          {name, {:ok, %{waiting: waiting}}} -> {name, nil, waiting}
+          {name, {:ok, %{recording: %{} = recording}}} -> {name, recording, nil}
+          _ -> nil
+        end)
+
+      # A collector of the usual name that is not a recording: one that is
+      # running has `recording: nil`, and one that waits has no such key.
+      collecting = match?({:ok, %{recording: nil}}, statuses[TimelessBeamAcct])
 
       storage =
         case planes() do
@@ -229,7 +246,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
             end
         end
 
-      pace(socket, node, collecting)
+      pace(socket, node, running || waiting)
 
       assign(socket,
         links: Map.new(recordings, &{&1.id, "?" <> URI.encode_query(recording: &1.id)}),
@@ -238,6 +255,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
         now: now,
         running: running,
         collecting: collecting,
+        recording_name: recording_name,
         waiting: waiting,
         recordings: recordings,
         error: error
@@ -250,8 +268,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       do: assign(socket, watch: watch, extra: extra, extra_data: Opened.read_extra(watch, extra))
 
     # Measured once for each node chosen, where a recording could be started.
-    defp pace(socket, node, collecting) do
-      if not collecting and socket.assigns[:paced] != node and connected?(socket) do
+    defp pace(socket, node, recording) do
+      if is_nil(recording) and socket.assigns[:paced] != node and connected?(socket) do
         Task.async(fn -> {:paced, node, Remote.pace(node, 3)} end)
       end
 
@@ -338,15 +356,14 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
           </div>
         </div>
 
-        <div :if={!@running and @collecting and !@waiting} class="alert alert-secondary">
-          A collector is running in <strong>{@node}</strong>, and is not a recording: it runs
-          until it is stopped. It was started in code or by <code>attach</code>, without
-          <code>stop_after</code>.
-        </div>
-
-        <div :if={!@running and !@collecting} class="card mb-4">
+        <div :if={!@running and !@waiting} class="card mb-4">
           <div class="card-body">
             <h5 class="card-title">Record {@node}</h5>
+            <p :if={@collecting} class="small text-muted">
+              A collector is running here already, and is not a recording: it runs until it is
+              stopped. A recording runs beside it, for as long as you say, and the two are
+              listening while it does.
+            </p>
             <form phx-submit="record">
               <div class="form-group row mb-2">
                 <label class="col-sm-2 col-form-label col-form-label-sm text-muted">For</label>

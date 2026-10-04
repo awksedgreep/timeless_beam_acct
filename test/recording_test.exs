@@ -165,6 +165,7 @@ defmodule TimelessBeamAcct.RecordingTest do
     assert busy.mib_an_hour > idle.mib_an_hour
     assert busy.said =~ "starts about 65 processes a second"
     assert busy.said =~ "% of one core"
+    assert Recording.estimate(1).said =~ "about 1 process a second"
   end
 
   test "how long a recording may run is checked when it starts" do

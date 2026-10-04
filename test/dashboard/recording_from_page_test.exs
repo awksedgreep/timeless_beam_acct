@@ -16,12 +16,17 @@ defmodule TimelessBeamAcct.Dashboard.RecordingFromPageTest do
 
     on_exit(fn ->
       Application.delete_env(:timeless_beam_acct, :dashboard)
-      if TimelessBeamAcct.Remote.attached?(node()), do: TimelessBeamAcct.Remote.detach(node())
+
+      for name <- [TimelessBeamAcct, TimelessBeamAcct.Recorded],
+          TimelessBeamAcct.Remote.attached?(node(), name),
+          do: TimelessBeamAcct.Remote.detach(node(), name)
     end)
   end
 
   defp socket do
-    %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, page: %{node: node()}, said: nil}}
+    %Phoenix.LiveView.Socket{
+      assigns: %{__changed__: %{}, page: %{node: node()}, said: nil, collecting: false}
+    }
   end
 
   test "a recording is started from the page, made longer, and stopped" do
@@ -59,6 +64,32 @@ defmodule TimelessBeamAcct.Dashboard.RecordingFromPageTest do
     assert socket.assigns.said == "The recording was stopped."
     refute TimelessBeamAcct.running?()
     assert socket.assigns.running == nil
+  end
+
+  test "beside a collector that is not a recording, one is recorded under a name of its own" do
+    start_supervised!(
+      {TimelessBeamAcct, sink: {:forward, to: self()}, interval: 3600, process_interval: 3600}
+    )
+
+    # As the page has read the node: a collector is there, not recording.
+    socket = %{socket() | assigns: %{socket().assigns | collecting: true}}
+    {:noreply, socket} = Page.handle_event("record", %{"length" => "1h"}, socket)
+
+    # The page saw the plain one, and recorded beside it.
+    assert socket.assigns.said == "Recording."
+    assert TimelessBeamAcct.status().recording == nil
+    assert %{recording: %{by: by}} = TimelessBeamAcct.status(TimelessBeamAcct.Recorded)
+    assert by =~ "LiveDashboard"
+    assert socket.assigns.running
+    assert socket.assigns.recording_name == TimelessBeamAcct.Recorded
+
+    # And what it does to it, it does to that one, and not the other.
+    {:noreply, socket} = Page.handle_event("extend", %{"by" => "1h"}, socket)
+    assert socket.assigns.said =~ "It now ends at"
+    {:noreply, socket} = Page.handle_event("stop", %{}, socket)
+    assert socket.assigns.said == "The recording was stopped."
+    refute TimelessBeamAcct.running?(TimelessBeamAcct.Recorded)
+    assert TimelessBeamAcct.running?()
   end
 
   test "what is not a length is refused, and nothing is started" do

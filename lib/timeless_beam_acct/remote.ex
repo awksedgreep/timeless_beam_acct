@@ -526,7 +526,8 @@ defmodule TimelessBeamAcct.Remote do
   """
   @spec pace(node(), number()) :: {:ok, float()} | {:error, reason()}
   def pace(node, seconds \\ 3) when is_number(seconds) and seconds > 0 do
-    with :ok <- reached(node),
+    # Of this node as of another: it is only asked how fast it goes.
+    with :ok <- if(node == node(), do: :ok, else: reached(node)),
          {:ok, first} <- pid_number(node) do
       Process.sleep(round(seconds * 1000))
 

@@ -145,6 +145,10 @@ defmodule TimelessBeamAcct.RemoteTest do
 
       assert {:error, _} =
                Remote.pace(:"nobody_#{System.unique_integer([:positive])}@localhost", 0.1)
+
+      # And of this node, as of another.
+      assert {:ok, here} = Remote.pace(node(), 0.2)
+      assert here >= 0
     end
   end
 

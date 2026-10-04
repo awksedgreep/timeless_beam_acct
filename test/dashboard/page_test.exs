@@ -59,8 +59,13 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
     measured = page(estimate: "This node starts about 90 processes a second.")
     assert measured =~ "This node starts about 90 processes a second."
     refute measured =~ "where 65 processes end"
-    # Not where a collector is running already.
-    refute page(collecting: true) =~ ~s(phx-submit="record")
+    # Not where a recording is running, or is waiting to.
+    refute page(running: %{started: @now - 60, stop_at: @now + 60, by: nil, recording: "a"}) =~
+             ~s(phx-submit="record")
+
+    refute page(waiting: %{start_at: @now + 60, stop_after: 60.0, by: nil}) =~
+             ~s(phx-submit="record")
+
     assert html =~ "No recordings in the last 31 days."
   end
 
@@ -80,8 +85,9 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
 
   test "a collector that is not a recording is said to be one" do
     html = page(collecting: true)
-    assert html =~ "A collector is running in <strong>app@ohm</strong>, and is not a recording"
-    refute html =~ "No recording is running"
+    assert html =~ "A collector is running here already, and is not a recording"
+    # And one can be recorded beside it.
+    assert html =~ ~s(phx-submit="record")
   end
 
   test "the recordings, with how each ended" do

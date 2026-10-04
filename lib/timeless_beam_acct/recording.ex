@@ -70,7 +70,7 @@ defmodule TimelessBeamAcct.Recording do
       cpu_pct: Float.round(cpu, 1),
       mib_an_hour: Float.round(mib, 1),
       said:
-        "This node starts about #{round(rate)} processes a second. Recording it is likely " <>
+        "This node starts about #{round(rate)} #{if round(rate) == 1, do: "process", else: "processes"} a second. Recording it is likely " <>
           "to cost about #{Human.fixed(cpu, 1)}% of one core, and about " <>
           "#{Human.bytes(mib * 1024 * 1024)} an hour in the planes."
     }
