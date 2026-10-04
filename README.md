@@ -278,6 +278,31 @@ one running in the node chosen at the top of the dashboard, with how far
 along it is, **Stop**, and **+1 hour**; and the recordings the logs plane
 has, with how each ended.
 
+![A recording of shop@ohm running, twelve minutes in, with the recordings
+and what the planes hold under it](docs/images/dashboard-running.png)
+
+A node being recorded: started from this dashboard, in another node,
+and to end by itself at 13:42. Under it the recordings, and what the
+planes hold and how small: exit records and spans at 10:1 and 16:1, the
+indexes beside them on disk and not in the figure.
+
+![The form that starts a recording: for how long, now or at a time, and
+what to keep](docs/images/dashboard-record.png)
+
+With none running, the form: for how long, now or at a time of the
+node's, and what to keep. A recording ends by itself, a day at most.
+
+![A recording opened: the timeline of it, the node at the moment picked,
+and its groups by work](docs/images/dashboard-recording.png)
+
+A recording opened, at its end: the timeline across the top, red where a
+process raised and yellow where one was killed, and the groups as of the
+moment, with how one of them worked over the ten minutes before. The
+keys are `watch`'s. Schedulers is the work of the schedulers, over all
+twenty-two of them; CPU is what the OS gave the node, which counts the
+time a scheduler spins waiting for work, and on a node of many short
+processes is far the larger.
+
 The page is compiled only in an application that has
 `phoenix_live_dashboard`: it and `phoenix_live_view` are optional
 dependencies of this one, and an application without them fetches

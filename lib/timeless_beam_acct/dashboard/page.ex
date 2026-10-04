@@ -566,7 +566,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
             </tr>
           </tfoot>
         </table>
-        <p class="text-muted small mb-0 mt-2">
+        <p class="text-muted small mb-0 px-3 py-2">
           Compression is of raw, as the planes count it, against what it was compressed to;
           indexes are on disk beside it, and not in it.
         </p>

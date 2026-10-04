@@ -66,7 +66,10 @@ defmodule TimelessBeamAcct.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "DESIGN.md", "CHANGELOG.md", "LICENSE"]
+      extras: ["README.md", "DESIGN.md", "CHANGELOG.md", "LICENSE"],
+      # The screenshots the README shows, at the same path in the docs as in
+      # the repository, so that one link serves both.
+      assets: %{"docs/images" => "docs/images"}
     ]
   end
 end
