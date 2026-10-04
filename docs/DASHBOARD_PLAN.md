@@ -332,6 +332,11 @@ Depends on A1–A3, A5, B1–B4.
   view of the page: its node, how far along, **Stop**, and **+1 hour**.
 - [x] **C3 — The list.** (S) The recordings of the store (A3), the last
   first, with their size from the planes' own counts.
+- [ ] **C5 — Remove a recording.** (S) Waits on the planes being able to
+  delete by labels and a time range (timeless-libsql #117). Then a
+  confirmed Remove on each recording, saying what it frees, and
+  `mix timeless_beam_acct.recordings --delete ID`. Not offered before:
+  hiding one would free nothing and leave the storage counting it.
 - [ ] **C4 — What the page says where it cannot record.** (S) A node it
   cannot reach, a node with a collector that was not started as a
   recording, a store it cannot write to. Each said, with what to do.
