@@ -334,10 +334,15 @@ nothing more. A dashboard whose `additional_pages` are not written out
 as a list, `additional_pages: pages()`, is left as it is, and the
 installer says what to add.
 
-**With timeless_phoenix.** Its dashboard has the page among its own, from
-timeless_phoenix 2.0.4: `TimelessPhoenix.dashboard_pages/1` includes it
-whenever this package is a dependency. Nothing is added to the router,
-and it does not matter which of the two installers runs first:
+**With timeless_phoenix.** An application that has both packages,
+timeless_phoenix 2.0.4 or later and this one, has the page on
+timeless_phoenix's dashboard: `TimelessPhoenix.dashboard_pages/1` adds
+it when this package is among the application's dependencies.
+timeless_phoenix does not depend on this package and does not install
+it: an application with timeless_phoenix alone has its three pages and
+no more, and nothing of this one. Each is installed by its own
+installer. Nothing is added to the router, and it does not matter which
+of the two installers runs first:
 timeless_phoenix's takes out the `live_dashboard` that `mix phx.new`
 made, and the page with it, and puts its own dashboard, with the page,
 in its place. Both orders were run against a new `mix phx.new`

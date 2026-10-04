@@ -353,9 +353,13 @@ if Code.ensure_loaded?(Igniter) do
 
     defp page_notice(:timeless_phoenix) do
       """
-      The router has timeless_phoenix's dashboard, which has the page of
-      recordings ("TimelessAcct") among its own from timeless_phoenix
-      2.0.4. It reads the planes said in
+      The router has timeless_phoenix's dashboard. With timeless_phoenix
+      2.0.4 or later, and this package among the dependencies, as it now
+      is, that dashboard has the page of recordings ("TimelessAcct") among
+      its own, and the router needs nothing more. With an earlier
+      timeless_phoenix the page is not there; update it to 2.0.4.
+
+      The page reads the planes said in
       config :timeless_beam_acct, :dashboard (config/config.exs).
       """
     end

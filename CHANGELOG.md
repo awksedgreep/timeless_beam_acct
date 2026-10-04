@@ -53,7 +53,9 @@
 - `mix timeless_beam_acct.install` adds the page to the `live_dashboard`
   in the router, beside the pages it has, once however often it runs, and
   says where the planes are for it. timeless_phoenix's dashboard is left
-  as it is: from timeless_phoenix 2.0.4 it has the page among its own.
+  as it is: where an application has both timeless_phoenix 2.0.4 or
+  later and this package, that dashboard has the page among its own.
+  timeless_phoenix does not depend on this package or install it.
   Run in both orders with timeless_phoenix's installer against a new
   `mix phx.new` application, the page was in the menu of each.
 - **The installer configures no collector unless told `--always-on`.**
