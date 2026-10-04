@@ -1,7 +1,7 @@
 defmodule TimelessBeamAcct.MixProject do
   use Mix.Project
 
-  @version "0.3.0"
+  @version "0.3.1"
   @source_url "https://github.com/awksedgreep/timeless_beam_acct"
 
   def project do
