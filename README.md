@@ -288,7 +288,10 @@ A recording is started from the page too: how long, now or at a time,
 and what of it to keep. And a recording is opened from the list, as
 `watch` opens one: the timeline of it across the top, to click on, and
 the groups, processes, jobs, and exits as of the moment picked, with
-`watch`'s keys. What is read and what a key does are `watch`'s own, so
+`watch`'s keys; and three views a page has room for that a terminal has
+not, `5` to `7`: the node over the whole timeline, a figure to a line,
+what the VM remarked on, and what the collector said of itself. What is
+read and what a key does are `watch`'s own, so
 the two do not come to differ. The link has the recording in it, and
 can be sent to someone.
 

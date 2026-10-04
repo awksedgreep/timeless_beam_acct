@@ -27,7 +27,9 @@
   recording running in the chosen node, with **Stop** and **+1 hour**,
   or a form to start one, now or later; and the recordings of the logs
   plane, each opened as `watch` opens one: the timeline across the top,
-  clicked to go to a moment, the four views, and `watch`'s keys. `phoenix_live_dashboard` and
+  clicked to go to a moment, the four views, and `watch`'s keys; and
+  three of the page's own, `5` to `7`: the node over the timeline, what
+  the VM remarked on, and what the collector said of itself. `phoenix_live_dashboard` and
   `phoenix_live_view` are optional dependencies, and the page is
   compiled only where they are.
 

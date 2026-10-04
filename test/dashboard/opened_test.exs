@@ -65,6 +65,87 @@ defmodule TimelessBeamAcct.Dashboard.OpenedTest do
     assert Opened.go_to_column(gone, Opened.columns() - 1).state.at > gone.state.at
   end
 
+  test "the page's own views: the node, what the VM remarked on, and the collector" do
+    remark =
+      TimelessBeamAcct.Watch.Store.exit(Clock.now() - 700, "notice", %{
+        "kind" => "long_gc",
+        "service" => "MyApp.Importer",
+        "pid" => "<0.902.0>",
+        "status" => "long_gc",
+        "value" => 340,
+        "unit" => "ms"
+      })
+
+    watch = watch(remarks: [remark])
+    assert Opened.extra("5") == :node
+    assert Opened.extra("6") == :remarks
+    assert Opened.extra("7") == :collector
+    assert Opened.extra("1") == nil
+
+    node = Opened.read_extra(watch, :node)
+    assert [%{label: "schedulers", kind: :pct, points: [_ | _]} | _] = node
+
+    html =
+      render_component(&Opened.recording/1,
+        watch: watch,
+        back: "/",
+        extra: :node,
+        extra_data: node
+      )
+
+    assert html =~ "schedulers: <strong>2.0%</strong>"
+    assert html =~ "garbage collections /s"
+    # watch's view is not drawn under the page's own.
+    refute html =~ "GROUP"
+
+    remarks = Opened.read_extra(watch, :remarks)
+    assert [%{status: "long_gc"}] = remarks
+
+    html =
+      render_component(&Opened.recording/1,
+        watch: watch,
+        back: "/",
+        extra: :remarks,
+        extra_data: remarks
+      )
+
+    assert html =~ "MyApp.Importer"
+    assert html =~ "340ms"
+
+    html =
+      render_component(&Opened.recording/1,
+        watch: watch,
+        back: "/",
+        extra: :remarks,
+        extra_data: []
+      )
+
+    assert html =~ "The VM remarked on nothing"
+
+    collector = [{"beam_acct_processes", 512.0}, {"beam_acct_records_dropped", 0.0}]
+
+    html =
+      render_component(&Opened.recording/1,
+        watch: watch,
+        back: "/",
+        extra: :collector,
+        extra_data: collector
+      )
+
+    assert html =~ "beam_acct_processes"
+    assert html =~ "<td>512</td>"
+
+    html =
+      render_component(&Opened.recording/1,
+        watch: watch,
+        back: "/",
+        extra: :collector,
+        extra_data: {:error, "the store is away"}
+      )
+
+    assert html =~ "the store is away"
+  end
+
   test "it is drawn as watch's screen is" do
     html = html(watch())
     assert html =~ ~s(phx-window-keydown="key")

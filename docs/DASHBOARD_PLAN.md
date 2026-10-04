@@ -350,7 +350,7 @@ Depends on A3, B1–B4, D4.
   first two. A module a view.
 - [x] **D3 — The keys.** (S) `watch`'s keys, through `Watch.State.key/4`,
   so that the two cannot come to differ.
-- [ ] **D4 — Node, Remarks, Collector.** (M) The tiles of the node with a
+- [x] **D4 — Node, Remarks, Collector.** (M) The tiles of the node with a
   sparkline each; what the VM remarked on; what the collector let go.
 - [ ] **D5 — What leads to what.** (S) The links of section 6.
 - [ ] **D6 — Tests.** (M) Each view against the test store, whole, as

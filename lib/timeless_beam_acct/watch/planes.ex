@@ -343,9 +343,12 @@ defmodule TimelessBeamAcct.Watch.Planes do
   end
 
   @impl true
-  def timeline(%__MODULE__{} = store, from, to) do
+  def timeline(%__MODULE__{} = store, from, to),
+    do: trend(store, "beam_vm_scheduler_util_pct", [scheduler: "all"], from, to)
+
+  @impl true
+  def trend(%__MODULE__{} = store, metric, labels, from, to) do
     span = to - from
-    metric = "beam_vm_scheduler_util_pct"
 
     resolution =
       cond do
@@ -361,8 +364,10 @@ defmodule TimelessBeamAcct.Watch.Planes do
             store,
             :metrics,
             "/api/v1/query_range",
-            [metric: metric, scheduler: "all", start: trunc(from), end: trunc(Float.ceil(to / 1))] ++
-              [step: resolution, aggregate: "max"] ++ who(store)
+            [metric: metric] ++
+              labels ++
+              [start: trunc(from), end: trunc(Float.ceil(to / 1)), step: resolution] ++
+              [aggregate: "max"] ++ who(store)
           )
 
         with {:ok, body} <- asked,
@@ -375,12 +380,15 @@ defmodule TimelessBeamAcct.Watch.Planes do
         []
       end
 
-    case ranged do
-      [] ->
-        {history(store, metric, "scheduler", "all", from, to),
+    case {ranged, labels} do
+      {[], [{key, want} | _]} ->
+        {history(store, metric, Atom.to_string(key), want, from, to),
          elem(spacing(store, to), 0) || 10.0}
 
-      points ->
+      {[], []} ->
+        {history(store, metric, nil, nil, from, to), elem(spacing(store, to), 0) || 10.0}
+
+      {points, _} ->
         {points, resolution / 1}
     end
   end
@@ -502,7 +510,16 @@ defmodule TimelessBeamAcct.Watch.Planes do
   end
 
   @impl true
-  def exits(%__MODULE__{} = store, %{until: until, span: span, limit: limit}, wanted) do
+  def exits(%__MODULE__{} = store, reach, wanted),
+    do: records_of(store, reach, &(&1 == "exit"), wanted)
+
+  # What the VM remarked on: records of every kind but those of processes
+  # that ended and of recordings.
+  @impl true
+  def remarks(%__MODULE__{} = store, reach, wanted),
+    do: records_of(store, reach, &(&1 not in ["exit", "recording", nil]), wanted)
+
+  defp records_of(store, %{until: until, span: span, limit: limit}, kind?, wanted) do
     # What is wanted is decided as the store is read, and not after: a
     # busy node ends hundreds of processes a second, and the one that is
     # looked for is seldom among the last few.
@@ -520,7 +537,7 @@ defmodule TimelessBeamAcct.Watch.Planes do
           found =
             found ++
               for row <- rows,
-                  row["kind"] == "exit",
+                  kind?.(row["kind"]),
                   ours?(store, row),
                   exit = exit_of(row),
                   wanted.(exit),

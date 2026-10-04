@@ -40,7 +40,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     @impl true
     def mount(_params, _session, socket) do
-      {:ok, socket |> assign(said: nil, watch: nil) |> read()}
+      {:ok, socket |> assign(said: nil, watch: nil, extra: nil, extra_data: nil) |> read()}
     end
 
     # A recording is opened by its id in the query string, so that it can
@@ -66,7 +66,9 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     @impl true
     def handle_refresh(%{assigns: %{watch: %{} = watch}} = socket) do
       if State.live?(watch.state),
-        do: {:noreply, assign(socket, watch: TimelessBeamAcct.Watch.read_moment(watch))},
+        do:
+          {:noreply,
+           showing(socket, TimelessBeamAcct.Watch.read_moment(watch), socket.assigns.extra)},
         else: {:noreply, socket}
     end
 
@@ -78,24 +80,40 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
         nil ->
           {:noreply, socket}
 
+        # The page's own views, which watch has not. As any key does, it
+        # puts away what was drawn over the rest.
+        {:char, n} when n in ["5", "6", "7"] ->
+          watch = %{watch | state: %{watch.state | inspecting: false, help: false}}
+          {:noreply, showing(socket, watch, Opened.extra(n))}
+
         pressed ->
           watch = Opened.pressed(watch, pressed)
+
+          # One of watch's views is gone to by its number.
+          extra =
+            if pressed in [{:char, "1"}, {:char, "2"}, {:char, "3"}, {:char, "4"}],
+              do: nil,
+              else: socket.assigns.extra
 
           # q, or escape out of everything, is back to the recordings.
           if watch.state.quit,
             do: {:noreply, push_patch(socket, to: socket.assigns.here)},
-            else: {:noreply, assign(socket, watch: watch)}
+            else: {:noreply, showing(socket, watch, extra)}
       end
     end
 
     def handle_event("key", _params, socket), do: {:noreply, socket}
 
     def handle_event("goto", %{"column" => column}, %{assigns: %{watch: %{} = watch}} = socket) do
-      {:noreply, assign(socket, watch: Opened.go_to_column(watch, String.to_integer(column)))}
+      watch = Opened.go_to_column(watch, String.to_integer(column))
+      {:noreply, showing(socket, watch, socket.assigns.extra)}
     end
 
     def handle_event("tab", %{"tab" => n}, %{assigns: %{watch: %{} = watch}} = socket) do
-      {:noreply, assign(socket, watch: Opened.tab(watch, n))}
+      case Opened.extra(n) do
+        nil -> {:noreply, showing(socket, Opened.tab(watch, n), nil)}
+        extra -> {:noreply, showing(socket, watch, extra)}
+      end
     end
 
     def handle_event("record", params, socket) do
@@ -195,6 +213,11 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       )
     end
 
+    # What is watched, and which of the page's own views is shown, read as
+    # of the moment.
+    defp showing(socket, watch, extra),
+      do: assign(socket, watch: watch, extra: extra, extra_data: Opened.read_extra(watch, extra))
+
     defp configured, do: Application.get_env(:timeless_beam_acct, :dashboard, [])
 
     defp planes do
@@ -218,7 +241,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       assigns = assign(assigns, opened: watch)
 
       ~H"""
-      <Opened.recording watch={@opened} back={@back} />
+      <Opened.recording watch={@opened} back={@back} extra={@extra} extra_data={@extra_data} />
       """
     end
 

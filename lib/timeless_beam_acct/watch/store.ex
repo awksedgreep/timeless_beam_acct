@@ -112,6 +112,21 @@ defmodule TimelessBeamAcct.Watch.Store do
   @callback incidents(t(), from :: float(), to :: float(), parts :: pos_integer()) ::
               {[incident()], t()}
 
+  @doc """
+  One series over a stretch of time, the highest in each part of it where
+  the stretch is long: `{points, seconds between them}`.
+  """
+  @callback trend(t(), metric :: String.t(), labels :: keyword(), float(), float()) ::
+              {[{float(), float()}], float()}
+
+  @doc """
+  What the VM remarked on within reach, and is wanted, the last first: a
+  long garbage collection, a long queue. As records of processes that
+  ended are, with the kind of remark as the status.
+  """
+  @callback remarks(t(), reach(), wanted :: (exit() -> boolean())) ::
+              {:ok, [exit()]} | {:error, String.t()}
+
   @doc "The processes that ended within reach and are wanted, the last to end first."
   @callback exits(t(), reach(), wanted :: (exit() -> boolean())) ::
               {:ok, [exit()]} | {:error, String.t()}
@@ -136,8 +151,8 @@ defmodule TimelessBeamAcct.Watch.Store do
               {:ok, [recording()]} | {:error, String.t()}
 
   for {name, arity} <-
-        [range: 1, at: 4, history: 6, spacing: 2, timeline: 3, recordings: 3] ++
-          [incidents: 4, exits: 3, record: 4, jobs: 4] do
+        [range: 1, at: 4, history: 6, spacing: 2, timeline: 3, recordings: 3, trend: 5] ++
+          [incidents: 4, exits: 3, remarks: 3, record: 4, jobs: 4] do
     args = Macro.generate_arguments(arity - 1, __MODULE__)
 
     @doc false

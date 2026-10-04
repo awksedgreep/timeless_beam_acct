@@ -70,6 +70,64 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     def go_to_column(watch, _column), do: watch
 
+    # The three views a page has beside watch's four.
+    @extras %{"5" => :node, "6" => :remarks, "7" => :collector}
+
+    @doc """
+    Which of the page's own views a number is, beside `watch`'s four:
+    `5` the node, `6` what the VM remarked on, `7` the collector.
+    """
+    @spec extra(String.t()) :: :node | :remarks | :collector | nil
+    def extra(n), do: @extras[n]
+
+    # What is drawn of the node, and how each is said.
+    @node [
+      {"schedulers", "beam_vm_scheduler_util_pct", [scheduler: "all"], :pct},
+      {"cpu", "beam_vm_cpu_pct", [], :pct},
+      {"run queue", "beam_vm_run_queue", [], :count},
+      {"work, reds/s", "beam_vm_reductions_per_sec", [], :count},
+      {"processes", "beam_vm_processes", [], :count},
+      {"started /s", "beam_vm_spawns_per_sec", [], :rate},
+      {"ended /s", "beam_vm_exits_per_sec", [], :rate},
+      {"memory", "beam_vm_mem_total_bytes", [], :bytes},
+      {"processes' memory", "beam_vm_mem_processes_bytes", [], :bytes},
+      {"binaries", "beam_vm_mem_binary_bytes", [], :bytes},
+      {"tables", "beam_vm_mem_ets_bytes", [], :bytes},
+      {"garbage collections /s", "beam_vm_gcs_per_sec", [], :rate}
+    ]
+
+    @doc """
+    What one of the page's own views shows, as of the moment looked at.
+    """
+    @spec read_extra(Watch.t(), :node | :remarks | :collector | nil) :: term()
+    def read_extra(_watch, nil), do: nil
+
+    def read_extra(%Watch{detail: %{window: {from, to}}} = watch, :node) do
+      for {label, metric, labels, kind} <- @node do
+        {points, step} = Store.trend(watch.store, metric, labels, from, to)
+        %{label: label, kind: kind, points: points, step: step, from: from, to: to}
+      end
+    end
+
+    def read_extra(%Watch{} = watch, :remarks) do
+      until = watch.state.at || watch.snapshot.at
+      reach = %{until: until, span: State.window(watch.state), limit: 200}
+
+      case Store.remarks(watch.store, reach, &State.wants?(watch.state, [&1.process, &1.status])) do
+        {:ok, remarks} -> remarks
+        {:error, why} -> {:error, why}
+      end
+    end
+
+    def read_extra(%Watch{} = watch, :collector) do
+      at = watch.state.at || watch.snapshot.at
+
+      case Store.at(watch.store, at, watch.within, [:collector]) do
+        {:ok, series} -> Data.collector(series)
+        {:error, why} -> {:error, why}
+      end
+    end
+
     @doc "A view of the four, by its number."
     @spec tab(Watch.t(), String.t()) :: Watch.t()
     def tab(watch, n) when n in ["1", "2", "3", "4"], do: pressed(watch, {:char, n})
@@ -79,6 +137,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     attr(:watch, :map, required: true)
     attr(:back, :string, required: true)
+    attr(:extra, :atom, default: nil)
+    attr(:extra_data, :any, default: nil)
 
     @doc "The opened recording."
     def recording(assigns) do
@@ -143,8 +203,12 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
         <div class="tba-tabs">
           <a :for={{tab, n} <- Enum.with_index(State.tabs(), 1)}
-             phx-click="tab" phx-value-tab={n} class={if tab == @state.tab, do: "tba-on"}>
+             phx-click="tab" phx-value-tab={n} class={if tab == @state.tab and !@extra, do: "tba-on"}>
             {n} {State.title(tab)}
+          </a>
+          <a :for={{extra, title, n} <- [{:node, "Node", 5}, {:remarks, "Remarks", 6}, {:collector, "Collector", 7}]}
+             phx-click="tab" phx-value-tab={n} class={if extra == @extra, do: "tba-on"}>
+            {n} {title}
           </a>
           <span :if={@state.tab in [:groups, :processes]}>by {State.sort_title(@state.sort)}</span>
           <span :if={@state.within}>&nbsp; in <strong>{elem(@state.within, 1)}</strong></span>
@@ -153,14 +217,15 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
         <.inspected :if={@state.inspecting and @detail.inspected} inspected={@detail.inspected} />
 
-        <.view state={@state} snapshot={@snapshot} detail={@detail} />
+        <.view :if={!@extra} state={@state} snapshot={@snapshot} detail={@detail} />
+        <.extra_view :if={@extra} extra={@extra} data={@extra_data} />
 
         <div :if={@state.going} class="tba-warn">go to {@state.going}▏ &nbsp; now, -15m, 14:30 · enter to go, esc to stay</div>
         <div :if={@detail.error} class="tba-bad">{@detail.error}</div>
         <div :if={@state.message} class="tba-warn">{@state.message}</div>
         <div class="tba-keys">
           ← → a reading · , . a minute · &lt; &gt; ten · [ ] an hour · t go to · l live · − + zoom ·
-          1–4 view · ↑ ↓ row · enter open · m its moment · s sort · a applications · / only ·
+          1–4 view · 5 node · 6 remarks · 7 collector · ↑ ↓ row · enter open · m its moment · s sort · a applications · / only ·
           or click the timeline
         </div>
       </div>
@@ -320,6 +385,92 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       </table>
       """
     end
+
+    attr(:extra, :atom, required: true)
+    attr(:data, :any, required: true)
+
+    defp extra_view(%{data: {:error, why}} = assigns) do
+      assigns = assign(assigns, why: why)
+
+      ~H"""
+      <div class="tba-bad">{@why}</div>
+      """
+    end
+
+    defp extra_view(%{extra: :node} = assigns) do
+      tiles =
+        for tile <- assigns.data || [] do
+          data = View.columns(tile.points, tile.to, tile.to - tile.from, @columns, tile.step)
+          last = tile.points |> List.last() |> then(&(&1 && elem(&1, 1)))
+
+          Map.merge(tile, %{
+            bars: Enum.with_index(data),
+            highest: Enum.max([0.0 | data]),
+            last: last
+          })
+        end
+
+      assigns = assign(assigns, tiles: tiles)
+
+      ~H"""
+      <div :for={tile <- @tiles} style="margin-bottom: 0.5rem">
+        <small>{tile.label}: <strong>{said(tile.last, tile.kind)}</strong>, up to {said(tile.highest, tile.kind)} over the timeline</small>
+        <svg class="tba-history" style="height: 2rem" viewBox={"0 0 #{columns()} 20"} preserveAspectRatio="none">
+          <rect :for={{value, column} <- tile.bars} x={column} width="0.9"
+                y={20 - bar(value, tile.highest, 20)} height={bar(value, tile.highest, 20)} fill="#3a7bd5" />
+        </svg>
+      </div>
+      """
+    end
+
+    defp extra_view(%{extra: :remarks} = assigns) do
+      assigns = assign(assigns, rows: assigns.data || [])
+
+      ~H"""
+      <table :if={@rows != []}>
+        <thead><tr><th>WHEN</th><th>PID</th><th>WHAT</th><th>PROCESS</th><th>MEASURED</th></tr></thead>
+        <tbody>
+          <tr :for={r <- @rows}>
+            <td>{clock(r.at)}</td><td>{r.pid}</td><td class={level(r.level)}>{r.status}</td>
+            <td>{r.process}</td><td>{measured(r.fields)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p :if={@rows == []}>The VM remarked on nothing over the timeline: no long collection, no long queue, no large heap.</p>
+      """
+    end
+
+    defp extra_view(%{extra: :collector} = assigns) do
+      assigns = assign(assigns, rows: assigns.data || [])
+
+      ~H"""
+      <table :if={@rows != []}>
+        <tbody>
+          <tr :for={{metric, value} <- @rows}><td>{metric}</td><td>{plain(value)}</td></tr>
+        </tbody>
+      </table>
+      <p :if={@rows == []}>The collector said nothing of itself at this moment.</p>
+      """
+    end
+
+    # A figure as it is: a count as a count.
+    defp plain(value) when value == trunc(value), do: Integer.to_string(trunc(value))
+    defp plain(value), do: Human.fixed(value, 3)
+
+    defp said(nil, _kind), do: "-"
+    defp said(value, :pct), do: pct(value)
+    defp said(value, :count), do: count(value)
+    defp said(value, :rate), do: rate(value)
+    defp said(value, :bytes), do: Human.bytes(value)
+
+    defp measured(%{"value" => value, "unit" => "ms"}) when is_number(value),
+      do: Human.duration(value / 1000)
+
+    defp measured(%{"value" => value, "unit" => "bytes"}) when is_number(value),
+      do: Human.bytes(value)
+
+    defp measured(%{"value" => value}) when is_number(value), do: count(value)
+    defp measured(_fields), do: ""
 
     attr(:detail, :map, required: true)
 

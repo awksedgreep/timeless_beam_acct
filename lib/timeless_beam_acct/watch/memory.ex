@@ -58,6 +58,24 @@ defmodule TimelessBeamAcct.Watch.Memory do
   def timeline(%__MODULE__{}, _from, _to), do: {[], 10.0}
 
   @impl true
+  def trend(%__MODULE__{}, _metric, _labels, _from, _to), do: {[], 10.0}
+
+  @impl true
+  def remarks(%__MODULE__{live: live}, %{until: until, span: span, limit: limit}, wanted) do
+    {:ok,
+     for(
+       %{ts_us: ts_us, level: level, fields: %{"kind" => kind} = fields} <- Live.records(live),
+       kind not in ["exit", "recording"],
+       remark = Store.exit(ts_us / 1_000_000, level, fields),
+       remark.at <= until and remark.at >= until - span,
+       wanted.(remark),
+       do: remark
+     )
+     |> Enum.reverse()
+     |> Enum.take(limit)}
+  end
+
+  @impl true
   def incidents(%__MODULE__{} = store, from, to, _parts) do
     {for(
        exit <- ended(store),

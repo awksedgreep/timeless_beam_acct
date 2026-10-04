@@ -96,6 +96,7 @@ defmodule TimelessBeamAcct.Watched do
               exits: [],
               jobs: [],
               recordings: [],
+              remarks: [],
               error: nil,
               to: nil
 
@@ -121,6 +122,18 @@ defmodule TimelessBeamAcct.Watched do
 
     @impl true
     def recordings(store, _from, _to), do: {:ok, store.recordings}
+
+    @impl true
+    def trend(store, metric, labels, from, to) do
+      asked(store, {:trend, metric, labels, from, to})
+      {store.history, 10.0}
+    end
+
+    @impl true
+    def remarks(store, reach, wanted) do
+      asked(store, {:remarks, reach})
+      {:ok, Enum.filter(store.remarks, wanted)}
+    end
 
     @impl true
     def timeline(store, from, to) do

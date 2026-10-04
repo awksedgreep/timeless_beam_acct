@@ -578,6 +578,63 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     end
   end
 
+  describe "a trend" do
+    test "of a long stretch is the highest of each part, of a short one the samples" do
+      plane =
+        plane([
+          {"/api/v1/query_range", %{"series" => [%{"data" => [[600, 4.0], [900, 7.5]]}]}},
+          {"/api/v1/export", lines([%{"timestamps" => [1_000_000], "values" => [3.0]}])}
+        ])
+
+      store = store(plane)
+
+      assert Store.trend(store, "beam_vm_run_queue", [], 0.0, 6 * 3600.0) ==
+               {[{600.0, 4.0}, {900.0, 7.5}], 300.0}
+
+      assert [%{"metric" => "beam_vm_run_queue", "aggregate" => "max", "step" => "300"}] =
+               asked(plane, "/api/v1/query_range")
+
+      assert {[{1000.0, 3.0}], _} = Store.trend(store, "beam_vm_run_queue", [], 0.0, 3600.0)
+
+      assert {[{1000.0, 3.0}], _} =
+               Store.trend(store, "beam_vm_scheduler_util_pct", [scheduler: "all"], 0.0, 3600.0)
+
+      assert Enum.any?(asked(plane, "/api/v1/export"), &(&1["scheduler"] == "all"))
+    end
+  end
+
+  describe "remarks" do
+    test "are the records of what the VM remarked on, and not of exits or recordings" do
+      plane =
+        plane([
+          {"/select/logsql/query",
+           lines([
+             record(300.0, %{
+               "kind" => "long_gc",
+               "status" => "long_gc",
+               "value" => 340,
+               "unit" => "ms"
+             }),
+             record(200.0, %{"kind" => "exit"}),
+             record(150.0, %{"kind" => "recording", "service" => "recording"}),
+             record(100.0, %{
+               "kind" => "large_heap",
+               "status" => "large_heap",
+               "level" => "warning"
+             })
+           ])}
+        ])
+
+      assert {:ok, [gc, heap]} =
+               Store.remarks(store(plane), %{until: 400.0, span: 400.0, limit: 10}, fn _ ->
+                 true
+               end)
+
+      assert %{at: 300.0, status: "long_gc", fields: %{"value" => 340}} = gc
+      assert %{at: 100.0, status: "large_heap", level: "warning"} = heap
+    end
+  end
+
   describe "recordings" do
     test "are read from the logs plane, of every node, by when they began" do
       plane =
