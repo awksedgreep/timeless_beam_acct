@@ -56,14 +56,17 @@ defmodule TimelessBeamAcct.MixProject do
       maintainers: ["Mark Cotner"],
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib docs .formatter.exs mix.exs README.md DESIGN.md CHANGELOG.md LICENSE)
+      # docs/ is how the project is worked on (the plan of the page, what is
+      # run before a release), and not what it is used by: it stays in the
+      # repository.
+      files: ~w(lib .formatter.exs mix.exs README.md DESIGN.md CHANGELOG.md LICENSE)
     ]
   end
 
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "DESIGN.md", "CHANGELOG.md", "LICENSE"] ++ Path.wildcard("docs/*.md")
+      extras: ["README.md", "DESIGN.md", "CHANGELOG.md", "LICENSE"]
     ]
   end
 end

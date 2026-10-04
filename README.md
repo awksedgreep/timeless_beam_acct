@@ -102,7 +102,7 @@ optional one, for the installer.
 With [Igniter](https://hexdocs.pm/igniter):
 
 ```sh
-mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct
+mix igniter.install timeless_beam_acct
 ```
 
 It adds the page of recordings to the application's LiveDashboard, with
@@ -116,8 +116,8 @@ A collector that starts with the application and runs until it is
 stopped is asked for, and never assumed:
 
 ```sh
-mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --always-on
-mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --always-on --sink timeless
+mix igniter.install timeless_beam_acct --always-on
+mix igniter.install timeless_beam_acct --always-on --sink timeless
 ```
 
 That configures one to start with the application, and to stay off
@@ -139,7 +139,7 @@ Or by hand:
 
 ```elixir
 # mix.exs
-{:timeless_beam_acct, github: "awksedgreep/timeless_beam_acct"}
+{:timeless_beam_acct, "~> 0.3"}
 ```
 
 ```elixir
@@ -288,7 +288,7 @@ recording ends.
 
 ```elixir
 # mix.exs
-{:timeless_beam_acct, github: "awksedgreep/timeless_beam_acct"}
+{:timeless_beam_acct, "~> 0.3"}
 ```
 
 Then one of three, in the router.
@@ -1241,8 +1241,15 @@ that was read: `:observer`, `:recon`, or the application's own count.
 - **What the VM remarked on, in `watch`.** A long garbage collection is a
   record, and is on a canvas and in `exits(kind: "long_gc")`, and has no
   view.
-- **A page in LiveDashboard.** It is to be a project of its own, and
-  [docs/DASHBOARD_PLAN.md](docs/DASHBOARD_PLAN.md) is the plan for it.
+- **The page, beside the stores in the node.** The page in LiveDashboard
+  reads and records to the Timeless planes. An application with
+  timeless_phoenix's stores in the node and no planes has the page in its
+  menu, and nothing for it to list or record to.
+- **Removing a recording.** It waits on the planes being able to remove
+  what a recording wrote
+  ([timeless-libsql #117](https://github.com/awksedgreep/timeless-libsql/issues/117)).
+- **A page that only reads.** Who may record is the router's to say
+  ([Securing it](#securing-it)); the page has no switch of its own.
 - **Memory a process holds outside its heap.** Large binaries are counted
   once, for the node, in `beam_vm_mem_binary_bytes`, and not against the
   processes that hold them.
@@ -1306,7 +1313,7 @@ works on that machine are. For planes that require a token there are
 
 The tests ask nothing of the planes of the machine they run on.
 
-[docs/RELEASING.md](docs/RELEASING.md) is what is run before a version is
+[docs/RELEASING.md](https://github.com/awksedgreep/timeless_beam_acct/blob/main/docs/RELEASING.md) is what is run before a version is
 tagged: the suite on each OTP, the planes, and what a person will do
 first.
 
