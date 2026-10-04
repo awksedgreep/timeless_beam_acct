@@ -1,13 +1,17 @@
 # A LiveDashboard page for timeless_beam_acct — Project Plan
 
-A Phoenix LiveDashboard page over what a collector records: what is busy,
-what ended, and what each job started. Drafted 2026-09-29 from a read of
-`timeless_beam_acct`, `timeless_metrics_dashboard`, `timeless_logs_dashboard`,
-`timeless_traces_dashboard`, `timeless_phoenix`, and `timeless_canvas`. No
-code has been written for it.
+A Phoenix LiveDashboard page for **recording** a node and **looking back**
+at what was recorded: start a recording, let it run for as long as was
+asked, and go through it as `mix timeless_beam_acct.watch` goes through a
+store, with the timeline across the top and the same four views under it.
 
-It is a separate project, `timeless_beam_acct_dashboard`. This plan is kept
-here because the first track is changes to this one.
+First drafted 2026-09-29. Rewritten 2026-10-03, after the collector was
+run against real planes for days and a terminal screen was built over
+it. What changed, and why, is in section 3. No code has been written for
+the page.
+
+It is a separate project, `timeless_beam_acct_dashboard`. This plan is
+kept here because the first track is changes to this one.
 
 Status legend: `[ ]` pending · `[~]` in progress · `[x]` done · `[?]` needs a decision
 
@@ -19,21 +23,28 @@ Size legend: **S** under a day · **M** a few days · **L** a week or more
 
 **Goals**
 
-- Open the dashboard during an incident and see, with nothing set up, what
-  the node is doing and which process is doing it.
-- Follow one thing through: from a process to the exits of its group, from
-  an exit to the job it was part of, from a job to its spans in the traces
-  page.
-- Look at a moment that has passed, from the stores, with the same pages.
+- Record a node for a stretch of time, from the dashboard, with nothing
+  set up beforehand: an hour while something is wrong, or a night while a
+  job runs.
+- Never leave a recording running by accident. Every recording ends on
+  its own (D6).
+- Go through a recording the way `watch` goes through a store: a
+  timeline of the stretch, a moment on it, and the groups, processes,
+  jobs, and exits as of that moment.
+- Follow one thing through: from a process to the exits of its group,
+  from an exit to the job it was part of, from a job to its spans in the
+  traces page.
+- Find the recordings that were made, however they were made: from the
+  page, from `mix`, or by a collector started in code.
 - Install the way the other three Timeless pages install.
 
 **Non-goals**
 
 - A canvas. The layout is fixed (D1).
+- A collector left running all the time. That is what a recording is
+  not, and the page does not offer it (section 3, L1).
 - Arranging a node's series beside a host's or a router's. That is what
-  `timeless_canvas` is for, and the collector already feeds it.
-- Collecting anything. The page reads what a collector has; it does not
-  sweep or trace.
+  `timeless_canvas` is for.
 - Alerting.
 
 ---
@@ -42,34 +53,32 @@ Size legend: **S** under a day · **M** a few days · **L** a week or more
 
 | | |
 |---|---|
-| The data has a known shape | The questions are the same on every node, and `top`, `exits`, and `trees` already answer them in a layout that works |
+| The data has a known shape | The questions are the same on every node, and `watch` already answers them in a layout that works |
 | It has to work with nothing set up | A canvas that has to be arranged first is no use at the moment the page is wanted |
 | The canvas is not drop-in | It needs three JavaScript hooks registered in the host's `app.js` and a route of its own. None of the three existing pages needs either |
 | The canvas already does the other job | Series of a node beside series of anything else |
 
-What is taken from the canvas is the timeline, not the layout: one time
-control at the top of a fixed page (D5).
+What is taken from the canvas, and from `watch`, is the timeline: one
+time control across the top of a fixed page (D5).
 
 ---
 
-## 3. Findings that shape the plan
+## 3. What was learned since the first draft
 
-These are facts from the code, not proposals.
+These are measurements, and they change the plan.
 
-| # | Finding | Where | Consequence |
+| # | Learned | Where | Consequence |
 | --- | --- | --- | --- |
-| F1 | The three existing pages are each one `PageBuilder` module with `refresher?: true`, tabs through `live_nav_bar`, a router macro, and an Igniter install task | `timeless_traces_dashboard/lib/.../page.ex:3`, `router.ex`, `mix/tasks/*.install.ex` | The fourth is built the same way, and looks the same |
-| F2 | None of them registers a JavaScript hook. Charts in the metrics page are SVG made on the server and shown as an image | `timeless_metrics_dashboard/lib/.../components.ex` (`chart_embed/1`) | Sparklines and trees are drawn on the server. No change to the host's `app.js` |
-| F3 | The logs and traces pages read through a `HistoricalSource` behaviour: the library in the node, or the Rust plane over HTTP, chosen in the configuration, with no falling back from one to the other | `timeless_traces_dashboard/lib/.../historical_source.ex` | The pattern for D4 exists and is followed |
-| F4 | What a collector has in memory is already readable as data: `snapshot/1`, `records/1`, `spans/1`, `status/1`, `checked/1` | `lib/timeless_beam_acct.ex` | The live tabs need no store |
-| F5 | `TimelessBeamAcct.Report` filters as data (`filter_events/2`) but totals and trees only as text | `lib/timeless_beam_acct/report.ex` | Totals and trees have to be had as data before a page can draw them (A1) |
-| F6 | `snapshot/1` copies the whole table of processes, and `records/1` and `spans/1` the whole of what is kept | `processes.ex` (`snapshot/2`), `history.ex` (`read/1`) | Fine at a hundred processes. At a hundred thousand, every refresh of every open page copies 47 MiB. A read that is bounded is needed (A2) |
-| F7 | A collector keeps the last reading of the node, and not the readings before it | `collector.ex` (`note_vm/3`) | A sparkline of the last few minutes has to come from somewhere else (D7) |
-| F8 | A collector may be in another node than the dashboard, put there by `TimelessBeamAcct.Remote` | `lib/timeless_beam_acct/remote.ex` | LiveDashboard already has a node to choose. The page reads from the node chosen, which has the collector's modules if it has a collector |
-| F9 | A record carries the `trace_id` and `span_id` of its span | `accounting.ex` (`put_place/2`) | An exit links to its job, and a job to the traces page |
-| F10 | `timeless_phoenix` hands LiveDashboard the three pages from one function | `timeless_phoenix/lib/timeless_phoenix.ex:71` (`dashboard_pages/1`) | The fourth is added there, if a collector is running (E2) |
-| F11 | The stores keep time in three units: seconds for samples, microseconds for records, nanoseconds for spans | `timeless_traces_dashboard/lib/.../page.ex:22` | One time control, converted at each source |
-| F12 | The names of the metrics, the keys of a record, and the attributes of a span are written down | `README.md`, "What is recorded" | They are the contract between the two projects (S1) |
+| L1 | A collector left running is not light on the planes. Per-process series come and go, and a node like `bench/watch_node.exs` makes some 43 new ones a minute. After two days, 140,000 series; on timeless-libsql 0.8.5 the planes broke well before that (#93), and on 0.8.6 the sweep's cost rose with the series (#97, fixed in 0.8.7) | DESIGN.md, "How many series that is, over time" | A collector is something run for a while and stopped: a **recording**. That is the page's whole model (D5, D6) |
+| L2 | What a recording costs the node: 4 to 6% of one core on a node ending 65 processes a second, measured as the node with the collector and without it | README, "Cost" | The page can say so before a recording is started (C1) |
+| L3 | What a recording costs the planes: about 4.4 bytes a sample, 45 a record, 40 a span, on 0.8.6. An hour of the bench node is about 25 MiB | README, "Cost" | The page can say how large a recording is, and will be (C1, C2) |
+| L4 | A moment of a large store is slow if asked for in one question: a `__name__` pattern walks the whole catalog (#95). Asked a metric at a time, by name, and only for the tiers a view shows, it is 15 ms on 80,000 series | `TimelessBeamAcct.Watch.Planes.at/4` | The page reads the past the way `watch` does, and does not write its own queries (B4) |
+| L5 | A timeline's marks of what went wrong need more than one answer on a busy node: the last few hundred errors reach back minutes, not hours | `Watch.Planes.incidents/4` | The same: the page uses what `watch` uses |
+| L6 | The collector keeps its last reading (`reading/1`) and can be asked for the first few processes of a node, or those of a group (`snapshot/2`) | `lib/timeless_beam_acct.ex` | The live half of the page needs no store, and does not copy a table of a hundred thousand processes |
+| L7 | The three existing pages are each one `PageBuilder` module with `refresher?: true`, tabs through `live_nav_bar`, a router macro, and an Igniter install task. None registers a JavaScript hook; charts are SVG made on the server | `timeless_*_dashboard` | The fourth is built the same way. Sparklines, the timeline, and trees are drawn on the server |
+| L8 | `timeless_phoenix` hands LiveDashboard the three pages from one function | `timeless_phoenix/lib/timeless_phoenix.ex` (`dashboard_pages/1`) | The fourth is added there (E2) |
+| L9 | A record carries the `trace_id` and `span_id` of its span | `accounting.ex` | An exit links to its job, and a job to the traces page |
+| L10 | `watch` is built as a store behaviour (`Watch.Store`), a reader of the node (`Watch.Live`), a snapshot (`Watch.Data`), and keys (`Watch.State`), with drawing separate from all of them | `lib/timeless_beam_acct/watch/` | The page can share everything but the drawing (B4) |
 
 ---
 
@@ -78,178 +87,201 @@ These are facts from the code, not proposals.
 - [x] **D1 — Fixed layout, no canvas.** Decided.
 - [x] **D2 — A separate project**, `timeless_beam_acct_dashboard`, which
   depends on this one. Decided.
-- [?] **D3 — Where the live tabs read from.** **Recommended: the
-  collector's memory, in the node chosen in LiveDashboard**, by `:erpc`.
-  It is what `mix timeless_beam_acct.top` already does.
-- [?] **D4 — Where the past is read from.** The stores in the node, the
-  planes over HTTP, or either.
-  **Recommended: a behaviour as in F3, the stores in the node first, the
-  planes second.** Either is what the traces page does, and it is about
-  twice the work of one.
-- [?] **D5 — The time control.** **Recommended: one moment, "as of", and a
-  window before it.** With no moment set, the page is live and refreshes.
-  With one set, every tab is of that moment and nothing refreshes. The
-  windows are those of the other pages (`1h`, `24h`, `7d`, `30d`).
-- [?] **D6 — What the page does where no collector is running.**
-  **Recommended: say so, and say how to start one. Not start one.** A
-  button that begins tracing every process of a node is not one to have
-  beside a refresh button. A later version may offer it behind a
-  confirmation.
-- [?] **D7 — Where a sparkline of the last few minutes comes from, live.**
-  The page keeps the readings it has seen while it is open, as
-  LiveDashboard's own charts do; or the collector keeps a short ring of
-  them. **Recommended: the page keeps them.** It costs the node nothing
-  when no one is looking. The cost is that a page just opened has one
-  point. With a store configured (D4), the page asks it for the minutes
-  before it was opened.
+- [x] **D3 — Now is read from the collector in the node**, by `:erpc`,
+  as `watch` reads it (L6). Decided by `watch`.
+- [?] **D4 — Where the past is read from.** **Recommended: the planes
+  only, at first**, through `Watch.Store` (L4, L10). The stores in the
+  node (`:timeless` sink) are a second implementation of the same
+  behaviour, and can come after.
+- [x] **D5 — The time control is a recording's stretch and a moment in
+  it.** A recording is a closed stretch of time; the page shows it
+  whole, across the top, with a cursor. While a recording runs, the
+  stretch ends at now and the page is live. Replaces "as of, and a
+  window".
+- [x] **D6 — The page starts recordings, and every recording ends on
+  its own.** Reverses the first draft, which said the page should never
+  start a collector. Starting one is behind a confirmation that says what
+  it will cost (L2, L3). See section 5 for how long.
+- [?] **D7 — Where a recording is written down.** **Recommended: in the
+  logs plane, as two records**: one when it starts (`kind: "recording"`,
+  `status: "started"`, with the node, the options, how long it was asked
+  to run, and who started it) and one when it ends (`status: "ended"`,
+  with why: its time ran out, it was stopped, the node went away). The
+  list of recordings is then a query, and a recording made from `mix` or
+  from code appears in it as one made from the page does. Nothing new is
+  stored anywhere.
 - [?] **D8 — The name in the menu.** **Recommended: `BEAM`**, with the
   page under the key `beam:`.
 
-Tracks A and B are blocked by nothing. Track C is blocked by D3 and D6,
-and Track D by D4 and D5.
+---
+
+## 5. How long a recording runs
+
+A recording is asked for a length when it is started. When that length
+has passed, it ends: the collector flushes what it has and stops, and
+writes that it did (D7).
+
+| | |
+|---|---|
+| Choices | **15 minutes, 1 hour, 4 hours, 8 hours**, or a length typed in |
+| Unless told | **1 hour** |
+| The most | **24 hours**, unless the host's configuration says otherwise (`config :timeless_beam_acct_dashboard, max_recording: "48h"`) |
+| While it runs | **Stop**, now; and **+1 hour**, which is refused past the most |
+| Starting later | **Start at** a time, with the same choices of length: a job that runs at 02:00 for an hour is recorded from 01:55 for 90 minutes, and not from bedtime for 8 hours |
+
+Eight hours is a night. A day is the most because it is as far as the
+planes have been watched and stayed well: seventeen hours on 0.8.6 at a
+third of a core at worst, and two days on 0.8.7 at 1.4%. Past that,
+what a recording costs the planes is a function of how many processes
+the node starts, and is not known in advance.
+
+**The timer is the collector's, in the node, and not the page's.** A
+page is closed, a laptop sleeps, a deploy restarts the dashboard's node.
+None of those may leave a recording running. So the length is an option
+of the collector (`stop_after: "8h"`, A1), and the collector ends itself.
+A node that restarts ends its recording with it, and the record of its
+start has no record of an end: the list says it ended when the node did.
 
 ---
 
-## 5. The page
+## 6. The page
 
-Seven tabs. The time control and the node are above them, and are the
-same for all.
+### The front: recordings
 
-| Tab | Shows | Live, from | Past, from |
-| --- | --- | --- | --- |
-| **Node** | Tiles: scheduler utilisation, run queue, memory by kind, reductions, processes started and ended, and each limit as a share. A sparkline in each | `status/1`, and what the page has seen | `beam_vm_*` |
-| **Processes** | The `top` table. Sorted by work, memory, queue, or age. Filtered by application or group | the table of processes | `beam_proc_*` |
-| **Groups** | One row a group, or an application: processes, memory, work, queue, started, ended, failed | `beam_group_*`, `beam_app_*` of the last tick | the same |
-| **Exits** | The records. Filtered by status, group, application, failed. Totals by group or application | records in memory | records in the logs store |
-| **Jobs** | Trees, those in which something failed first | spans in memory | spans in the traces store |
-| **Remarks** | What the VM remarked on, by kind | records in memory | records in the logs store |
-| **Collector** | What `check` prints, and what was let go: records, ticks, remarks, and how often the tracer stopped listening | `checked/1`, `status/1` | `beam_acct_*` |
+```text
+ Recording  shop@ohm   started 14:02 by mark   1h 12m of 4h   ████████░░░░░░░░   [ Stop ]  [ +1 hour ]
+──────────────────────────────────────────────────────────────────────────────────────────────────
+ node [ shop@ohm ▾ ]                                                               [ Record… ]
+
+ STARTED            LENGTH  NODE        ENDED                 EXITS    FAILED   SIZE
+ today 14:02        4h      shop@ohm    (running)             812k     8.1k     ~30 MiB so far
+ today 02:55        90m     jobs@ohm    time ran out          41k      12       6 MiB
+ yesterday 16:20    1h      shop@ohm    stopped by mark       211k     2.0k     25 MiB
+```
+
+**Record…** opens:
+
+```text
+ Record shop@ohm
+
+   for     ( ) 15 min   (•) 1 hour   ( ) 4 hours   ( ) 8 hours   ( ) [      ]
+   start   (•) now      ( ) at [ 01:55 ]
+
+   [x] a series for each notable process       (more to look at, more to store)
+   [ ] only processes that failed get a record (less to store on a busy node)
+
+   It will cost the node about 5% of one core, and the planes about 25 MiB an
+   hour on a node like this one. It ends by itself at 15:02.
+
+                                                        [ Cancel ]  [ Record ]
+```
+
+### A recording, opened
+
+`watch`'s screen as a page: the stretch across the top, the moment on it,
+and the views under it.
+
+```text
+ shop@ohm  today 14:02 → 18:02   ◀ 15:47:20                                           [ live ]
+ ▃▄▅▅▆▆▆▅▄▄▃▃▄▅▅▆▇▇▆▅▅▅▄▄▄▃▃▃▄▄▅▅▆▆▅▅▄▄▄▃▃▃▃▄▄▅▅▆▆▆▆▅▅▅▄▄▄▃▃▃▃▄▄▅▅▆▆▆▅▅▄▄▄▃▃▃▄▄▄▅▅
+                 !            ·                   ▲  !          !!                   ·
+ 14:02                       schedulers, up to 12.4%                                     18:02
+
+ run queue 0   schedulers 4.1%   mem 142 MiB   work 1.8M reds/s   processes 526 (+82 -82/s)
+
+  Groups   Processes   Jobs   Exits        Node   Remarks   Collector
+
+ GROUP                          WORK%    MEMORY  PROCS  MSGQ   REDS/s  ENDED/s
+ fn in Reports.Monthly.run/1     39.5   50.6 KiB    13     0     727k      0.7
+ Reports.Monthly.run/1           11.7   74.0 KiB     8     0     216k      0.1
+ ...
+ ┌ fn in Reports.Monthly.run/1 work, the 10 minutes before ────────── peak 57.5% ┐
+ │ ▅██     ▅▃▃▄▂▂  ▂▁▁▃▃   ▂▂▁        ▃▃▅▅ ▄▄███  █████▄     ▃▃   ███▄▅▅████▂▂  │
+ └───────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **The timeline** is the whole recording, and never more: a recording
+  is closed, so the stretch is known, and every column of it has been
+  asked about once (L5). Clicking a column goes to it; dragging the
+  cursor goes through it.
+- **The keys of `watch` work on the page**: `←` `→`, `,` `.`, `<` `>`,
+  `[` `]`, `t`, `l`, `m`, `/`, `tab` and `1`–`4`, `s`, `a`, `enter`,
+  `esc`. Someone who has used one has used the other.
+- **The first four tabs are `watch`'s four views.** Node, Remarks, and
+  Collector come after them, as what is looked at less.
+- **Live** is a recording that is running, at its end. The refresher is
+  on there and off everywhere else.
 
 ### What leads to what
 
 ```text
-Processes ──row──▶ Exits, of that group
-Groups ────row──▶ Processes, of that group     ──failed──▶ Exits, failed, of that group
-Exits ─────row──▶ Jobs, the tree that has it   (by trace_id, F9)
-Jobs ──────span─▶ the record of that process
+Groups ────row──▶ Processes, of that group
+Processes ─row──▶ what is known of that process: running, or how it ended
+Exits ─────row──▶ that process's record     ──m──▶ the moment it ended
+Exits ─────job──▶ Jobs, the tree that has it   (by trace_id, L9)
 Jobs ──────id───▶ the traces page, that trace
 Remarks ───row──▶ Processes, that process
 ```
 
-Each is a link with the filter in its query string, so a view can be
-sent to someone.
-
-### The Processes tab
-
-```text
-as of [ now            ]  window [1h]          node [app@ohm]     ⟳ 5s
-────────────────────────────────────────────────────────────────────────
- Node   Processes   Groups   Exits   Jobs   Remarks   Collector
-
- application [ all      ▾]   group [            ]   sort [ work ▾]
-
-        PID  APP      WORK%   REDS/s    MEMORY  MSGQ     AGE  PROCESS
-  <0.124.0>  busy      14.8     225k   588 KiB     0  >42.5s  Busy.Hoarder
-  <0.125.0>  busy       0.2     3.6k  16.6 KiB     0  >42.5s  Busy.Requests
-  <0.126.0>  busy       0.2     2.4k  11.5 KiB     0  >42.5s  Busy.Traffic
-
- 78 processes · 47 with series of their own · swept 3s ago in 2ms
-```
-
-### The Jobs tab
-
-```text
- 18:05:19   4 processes over 261µs   1 failed   in busy      trace b84c7c8d…  ↗
-   Busy.Request.handle/1            261µs   exited timeout
-   ├─ fn in Busy.Request.handle/1    52µs
-   ├─ fn in Busy.Request.handle/1    98µs
-   └─ fn in Busy.Request.handle/1   113µs
-```
-
-A bar beside each span for where in the job it ran is drawn on the
-server, as SVG (F2).
+Each is a link with the recording, the moment, and the filter in its
+query string, so a view can be sent to someone.
 
 ---
 
-## 6. Dependency map
+## 7. Dependency map
 
 ```mermaid
 graph TD
-  S1[S1 contract] --> A[Track A: data from the collector]
-  S1 --> B[Track B: the package]
-  A --> C[Track C: the tabs, live]
-  B --> C
-  S2[S2 store reads] --> D[Track D: the past]
-  C --> D
+  A[Track A: recordings in the collector] --> C[Track C: recording from the page]
+  B[Track B: the package] --> C
+  A --> D[Track D: going through a recording]
+  B --> D
   C --> E[Track E: integration]
   D --> E
 ```
 
 | Lane | Track | Repo | Blocked by | Can start |
 | --- | --- | --- | --- | --- |
-| 1 | A — data from the collector | `timeless_beam_acct` | S1 | **now** |
+| 1 | A — recordings in the collector | `timeless_beam_acct` | D7 | **now**, A1 at once |
 | 2 | B — the package | new `timeless_beam_acct_dashboard` | nothing | **now** |
-| 3 | C — the tabs, live | the new one | A1, A2, B1, D3, D6 | after those |
-| 4 | D — the past | the new one | S2, C, D4, D5 | after C |
-| 5 | Spikes S1, S2, S3 | both | nothing | **now**, all three at once |
+| 3 | C — recording from the page | the new one | A1–A3, B1–B4 | after those |
+| 4 | D — going through a recording | the new one | A3, B1–B4, D4 | after those |
 
-Lanes 1 and 2 are in different repositories and share only the contract.
-
----
-
-## 7. Phase 0 — Spikes
-
-- [ ] **S1 — The contract.** (S) Write down, in this repository, which
-  functions and which shapes the page may depend on, and say that they
-  are kept across minor versions: the snapshot, a record's keys, a span's
-  attributes, the names of the metrics (F12). Add a function that
-  answers with the collector's version, so the page can say when it is
-  reading a collector it does not understand.
-  *Done when:* it is a section of the README.
-- [ ] **S2 — What the stores can be asked.** (S) For each of the three
-  signals, in the node and over HTTP: the query that gets one tab's rows
-  at a moment, and how long it takes at a day's worth of a busy node.
-  For the Processes tab that is the last value of five metrics for every
-  `proc` in a window, which is the one most likely to be slow.
-  *Done when:* there is a query and a measurement for each tab, or a
-  note that a tab cannot be had from a store.
-- [ ] **S3 — What a refresh costs the node.** (S) At 1,000, 10,000, and
-  100,000 processes, what one refresh of the Processes tab costs the node
-  being watched, with `snapshot/1` as it is and with a read that is
-  bounded (A2). With one page open, and with ten.
-  *Done when:* there is a refresh interval that is safe to default to,
-  and a number of processes past which the tab shows the top of the table
-  only.
+C and D do not depend on each other.
 
 ---
 
-## 8. Track A — data from the collector (`timeless_beam_acct`)
+## 8. Track A — recordings in the collector (`timeless_beam_acct`)
 
-Depends on S1. The page is written against these, and nothing else in
-the collector.
+What a recording is belongs to the collector, so that the page, `watch`,
+and `mix` agree on it.
 
-- [ ] **A1 — Totals and trees as data.** (M) `Report.summary/2` and
-  `Report.trees/2` make text. Beside them: `Report.totals/2`, rows of
-  what `summary/2` prints; and `Report.jobs/2`, each job as its header
-  and its spans nested. The text is then made from the data, so that the
-  two cannot disagree. No change to what is printed.
-- [ ] **A2 — A read of the processes that is bounded.** (M)
-  `TimelessBeamAcct.top/1` as data: sorted, filtered, and cut to `n` in
-  the node, from the table, without the whole of it being copied to
-  whoever asks (F6). `snapshot/1` stays as it is, for the terminal.
-- [ ] **A3 — The groups and applications of the last tick, as data.** (S)
-  The collector has them at each sweep and hands them to the sink. Keep
-  the last in the status table, as the node's figures are kept, so the
-  Groups tab is not a query of a store when it is live.
-- [ ] **A4 — Records and spans by range.** (S) `records/1` and `spans/1`
-  read everything kept and then choose. Read by the time asked for, from
-  the table, which is in the order of arrival.
-- [ ] **A5 — (Later) word of each record as it is made.** (M) For a live
-  tail of exits, as the logs and traces pages have. A process asks to be
-  sent each record, and is forgotten when it ends. Only if the refresh
-  proves not to be enough.
+- [ ] **A1 — `stop_after`.** (S) An option of the collector: a length,
+  after which it flushes and stops itself. The timer is in the collector
+  (section 5). `status/1` says when it will stop. `extend/2` moves the
+  end, and is refused past a most that is given when it is started.
+- [ ] **A2 — `start_at`.** (S) An option that waits until a time before
+  the collector starts listening. Until then it is running and records
+  nothing, and `status/1` says when it will begin.
+- [ ] **A3 — A recording, written down.** (M) With `recording: true` (or
+  any `stop_after`), the collector writes a record when it begins and one
+  when it ends (D7). `TimelessBeamAcct.Recordings`: the recordings of a
+  store, from those records, as data: node, stretch, options, who, how it
+  ended, and the exits and failures counted in it.
+- [ ] **A4 — `mix timeless_beam_acct.record NODE --for 1h`.** (S)
+  Attaches a collector with `stop_after`, says when it will end, and
+  returns. `watch` gains `--recording`, which opens one by its start.
+- [ ] **A5 — What a recording will cost, said in advance.** (S) From the
+  node's processes, its exits a second, and the measured costs (L2, L3),
+  a sentence: about so much of a core, about so much an hour on the
+  planes. For the confirmation (C1) and for `record`.
+- [ ] **A6 — Totals and trees as data.** (M) `Report.summary/2` and
+  `Report.trees/2` make text. Beside them, `Report.totals/2` and
+  `Report.jobs/2` as data, and the text made from them. For the Exits and
+  Jobs tabs.
 
-A1, A2, A3, and A4 do not depend on each other.
+A1 first: it is the safety net, and everything else is built on a
+collector that ends.
 
 ---
 
@@ -259,95 +291,73 @@ Depends on nothing.
 
 - [ ] **B1 — The project.** (S) `mix new`, depending on
   `timeless_beam_acct`, `phoenix_live_dashboard ~> 0.8`, and
-  `phoenix_live_view ~> 1.0`. A `Page` with the seven tabs, each empty,
-  and the menu link (D8).
-- [ ] **B2 — The router macro.** (S) `timeless_beam_acct_dashboard "/dashboard"`,
-  as `timeless_traces_dashboard/2` (F1).
+  `phoenix_live_view ~> 1.0`. A `Page` with the recordings and an opened
+  recording as its two states, and the menu link (D8).
+- [ ] **B2 — The router macro.** (S) As `timeless_traces_dashboard/2`
+  (L7).
 - [ ] **B3 — The install task.** (S) With Igniter, optional, as the
-  others. It adds the page to the router and says how to start a
-  collector. It does not add one to the supervision tree without being
-  asked (D6).
-- [ ] **B4 — The source.** (S) A behaviour, `Source`, with one function
-  for each tab's rows. `Source.Live` reads the collector in the node
-  chosen (D3). The tabs are written against the behaviour, so that Track
-  D adds a source and changes no tab.
-- [ ] **B5 — A source for tests.** (S) `Source.Fixed`, which answers from
-  data written by hand, so the tabs are tested with no collector and no
-  node.
-
-B1 first. B2, B3, B4, and B5 then do not depend on each other.
+  others. It adds the page and the configuration of the planes. It does
+  not start a collector.
+- [ ] **B4 — Sharing `watch`.** (M) The page reads through `Watch.Store`,
+  `Watch.Live`, and `Watch.Data`, and keeps its moment in `Watch.State`
+  (L10). Whatever of them is written for the terminal and not for a page
+  is moved, in this repository, until the page needs nothing of its own
+  to read a moment. A test store for the page is `Watch.Store`'s, as the
+  tests of `watch` have one.
 
 ---
 
-## 10. Track C — the tabs, live
+## 10. Track C — recording from the page
 
-Depends on A1, A2, B1, B4, and on D3 and D6.
+Depends on A1–A3, A5, B1–B4.
 
-- [ ] **C1 — Collector.** (S) First, because it is what the page shows
-  when there is nothing else to show: no collector, a collector of a
-  version it does not understand, a collector that has stopped listening.
-- [ ] **C2 — Processes.** (M) The table of A2, its sort, its filters, and
-  the line under it.
-- [ ] **C3 — Exits.** (M) The table, its filters, and the totals of A1.
-  The filters are those of `Report.filter_events/2`, and are in the query
-  string.
-- [ ] **C4 — Jobs.** (M) The trees of A1, with the bar beside each span.
-  A job that is long is cut short and says so, as `trees` does.
-- [ ] **C5 — Groups.** (S) From A3.
-- [ ] **C6 — Remarks.** (S) The Exits table with another kind.
-- [ ] **C7 — Node.** (M) The tiles, and a sparkline in each from what the
-  page has seen (D7).
-- [ ] **C8 — What leads to what.** (S) The links of section 5, once the
-  tabs they join are there.
-- [ ] **C9 — Tests.** (M) Each tab against `Source.Fixed`, compared with
-  what is expected as `Report` is tested: whole, so that a change in
-  layout is a failing test. One test of the whole page against a
-  collector the test starts.
-
-C2, C3, C4, and C7 do not depend on each other, and all edit `Page`.
-Give each tab a module of its own from the start, so that they do not
-meet there.
+- [ ] **C1 — Record…** (M) The form of section 6: node, length, start,
+  the two options, what it will cost (A5), and when it will end.
+  Confirmed, it starts a collector in the node chosen, with
+  `TimelessBeamAcct.Remote` if the node has none of the modules.
+- [ ] **C2 — The banner.** (S) A recording that is running, on every
+  view of the page: its node, how far along, **Stop**, and **+1 hour**.
+- [ ] **C3 — The list.** (S) The recordings of the store (A3), the last
+  first, with their size from the planes' own counts.
+- [ ] **C4 — What the page says where it cannot record.** (S) A node it
+  cannot reach, a node with a collector that was not started as a
+  recording, a store it cannot write to. Each said, with what to do.
 
 ---
 
-## 11. Track D — the past
+## 11. Track D — going through a recording
 
-Depends on S2 and Track C, and on D4 and D5.
+Depends on A3, B1–B4, D4.
 
-- [ ] **D1 — The time control.** (M) "As of" and the window (D5), in the
-  query string. With a moment set, the refresher is off and the page says
-  which moment it is of.
-- [ ] **D2 — The stores in the node.** (L) `Source.Stores`: each tab's
-  rows from `TimelessMetrics`, `TimelessLogs`, and `TimelessTraces`, by
-  the queries of S2. The units of F11 are converted here and nowhere
-  else.
-- [ ] **D3 — The planes.** (L) `Source.Planes`: the same over HTTP. If D4
-  is decided as the stores in the node only, this is not built.
-- [ ] **D4 — Sparklines from before the page was opened.** (S) Where
-  there is a store, the Node tab asks it for the window, and adds what it
-  sees to the end of that.
-- [ ] **D5 — Where a tab cannot be had.** (S) A tab that a store cannot
-  answer for (S2) says so, and says which moment it could be had of. It
-  is not left empty.
-
-D2 and D3 do not depend on each other.
+- [ ] **D1 — The timeline.** (M) The recording's stretch, the busyness
+  of the schedulers in it, the marks under it, the cursor. Drawn on the
+  server as SVG (L7). Clicking and dragging set the moment.
+- [ ] **D2 — The four views.** (L) Groups, Processes, Jobs, Exits, from
+  `Watch.Data` and the store, with the picked row's history under the
+  first two. A module a view.
+- [ ] **D3 — The keys.** (S) `watch`'s keys, through `Watch.State.key/4`,
+  so that the two cannot come to differ.
+- [ ] **D4 — Node, Remarks, Collector.** (M) The tiles of the node with a
+  sparkline each; what the VM remarked on; what the collector let go.
+- [ ] **D5 — What leads to what.** (S) The links of section 6.
+- [ ] **D6 — Tests.** (M) Each view against the test store, whole, as
+  `watch`'s views are tested. One test of a recording from start to end
+  against a collector the test starts, with `stop_after` of a second.
 
 ---
 
 ## 12. Track E — integration
 
-Depends on Track C. E4 depends on Track D.
-
-- [ ] **E1 — The README**, with each tab as it looks, and the two ways a
-  collector is started.
+- [ ] **E1 — The README**, with the page as it looks, and the three ways
+  a recording is made: the page, `mix timeless_beam_acct.record`, and
+  `stop_after` in code.
 - [ ] **E2 — `timeless_phoenix`.** (S) `dashboard_pages/1` has the fourth
-  page (F10), when `timeless_beam_acct_dashboard` is among the
+  page (L8), when `timeless_beam_acct_dashboard` is among the
   dependencies.
-- [ ] **E3 — Against a node that is busy.** (M) `examples/busy_node.exs`,
-  with a collector, and the page open for an hour. What the page costs
-  the node is measured and written down, as the collector's cost is.
-- [ ] **E4 — Against a moment that has passed.** (S) The same node, the
-  next day, from the stores.
+- [ ] **E3 — A night.** (M) `bench/watch_node.exs`, recorded from the
+  page for eight hours with nobody looking, against planes started for
+  it. What the page and the recording cost, and whether the recording
+  ended by itself, written down.
 
 ---
 
@@ -355,12 +365,10 @@ Depends on Track C. E4 depends on Track D.
 
 | Milestone | Contains | Proves |
 | --- | --- | --- |
-| **M0 — Agreed** | D3–D8, S1–S3 | The page can be built against a contract, and a refresh is known to be safe |
-| **M1 — What is happening** | Track A, Track B, C1–C4 | The three views of the terminal, in the dashboard, live |
-| **M2 — All of it, live** | C5–C9, E1, E2 | Every tab, each leading to the next |
-| **M3 — What happened** | Track D, E3, E4 | The same pages, of last Tuesday |
-
-M1 is useful on its own, and needs no store.
+| **M0 — A recording ends by itself** | A1–A4 | From `mix`, a collector that stops on time and leaves a record of itself. Useful with `watch` alone, before there is a page |
+| **M1 — Recording from the page** | Track B, Track C | Start, see, extend, stop, and find a recording, from the dashboard |
+| **M2 — Going through it** | Track D | `watch` in the browser |
+| **M3 — Done** | Track E, A5, A6 | Installed as the others are, and measured over a night |
 
 ---
 
@@ -368,32 +376,33 @@ M1 is useful on its own, and needs no store.
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| A refresh copies the table of processes | The page slows the node it is there to watch, most on the nodes that most need watching | S3 before C2. A2. A refresh interval that lengthens with the number of processes, as the sweep's does |
-| The Processes tab cannot be had from a store quickly | The past has six tabs and not seven | S2 before D2. D5. The top groups, which are a few hundred series, in its place |
-| The page and the collector are of different versions | A tab is empty, or raises | S1. C1 shows the version and what it means |
-| The node chosen has no collector's modules | `:erpc` raises `undef` | C1: it is what "no collector" looks like from another node, and is said as that |
-| Two sources of the past that do not agree | A tab differs by where it was read from | One behaviour (B4), and the conversions in one place (D2) |
-| Trees of jobs with thousands of spans | A page too large to send | C4 cuts a tree short. `:max_lines`, as `trees` has |
-| Tabs built at once in one module | They meet in `Page` | A module a tab, from B1 |
+| A recording outlives everyone's attention | The planes grow until they hurt (L1) | The timer is the collector's (A1), a most of a day, and the end is written down (A3) |
+| A recording is started on a node far busier than the bench | It costs more than the confirmation said | A5 says it from the node's own figures, and the banner shows what it has cost so far |
+| The page reads a large store | Slow, as `watch` was before L4 | B4: the page reads as `watch` reads, and a recording is a closed stretch, which keeps the store small |
+| Two people record one node | Two collectors, twice the cost | A1 refuses a second recording of a node that has one, and says whose it is |
+| The page and the collector are of different versions | A view is empty, or raises | `version/0` is asked first, and a collector too old to record is said to be |
+| A recording made by `stop_after` in code is in the list | Someone stops what a deploy started | C2 says who started it, and stopping one the page did not start is behind a confirmation |
 
 ---
 
 ## 15. Things that need you
 
-- D3 to D8. D4 decides the size of Track D more than anything else does.
+- D4, D7, D8.
+- The longest recording allowed unless configured (section 5): 24 hours
+  is proposed.
 - The repository for `timeless_beam_acct_dashboard`, and its name.
-- E3 and E4 are against a node and stores you choose. Nothing is pointed
-  at the planes that are running without being asked.
+- E3 runs against planes started for it. Nothing is pointed at the
+  planes that are running without being asked.
 
 ---
 
 ## 16. Suggested first moves
 
-All four can start today, with no decision outstanding:
-
-1. **A1** — totals and trees as data. It changes nothing that is printed,
-   and every tab but two is drawn from it or from A2.
-2. **A2** — the read that is bounded, with **S3** to say by how much.
-3. **B1** and **B5** — the project, and the source the tabs are tested
-   against.
-4. **S2** — what the stores can be asked, which is what is least known.
+1. **A1**, `stop_after`. Small, and it makes every collector safe to
+   start, from anywhere.
+2. **A4**, `mix timeless_beam_acct.record`, on top of it: a recording
+   from the terminal, gone through with `watch`, is M0, and is useful
+   before the page exists.
+3. **A3** once D7 is agreed, so that recordings are found and not
+   remembered.
+4. **B1** and **B4** in the new repository, beside them.
