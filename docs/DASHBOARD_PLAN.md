@@ -311,7 +311,7 @@ Depends on nothing.
   and adds the page to it, and the configuration of the planes; in an
   application without one it does what it does now. It does not start a
   collector unless asked, as it does not now.
-- [ ] **B4 — Sharing `watch`.** (M) The page reads through `Watch.Store`,
+- [x] **B4 — Sharing `watch`.** (M) The page reads through `Watch.Store`,
   `Watch.Live`, and `Watch.Data`, and keeps its moment in `Watch.State`
   (L10). Whatever of them is written for the terminal and not for a page
   is moved, in this repository, until the page needs nothing of its own
@@ -324,7 +324,7 @@ Depends on nothing.
 
 Depends on A1–A3, A5, B1–B4.
 
-- [~] **C1 — Record…** (M) The form of section 6: node, length, start,
+- [x] **C1 — Record…** (M) The form of section 6: node, length, start,
   the two options, what it will cost (A5), and when it will end.
   Confirmed, it starts a collector in the node chosen, with
   `TimelessBeamAcct.Remote` if the node has none of the modules.
@@ -342,13 +342,13 @@ Depends on A1–A3, A5, B1–B4.
 
 Depends on A3, B1–B4, D4.
 
-- [ ] **D1 — The timeline.** (M) The recording's stretch, the busyness
+- [x] **D1 — The timeline.** (M) The recording's stretch, the busyness
   of the schedulers in it, the marks under it, the cursor. Drawn on the
   server as SVG (L7). Clicking and dragging set the moment.
-- [ ] **D2 — The four views.** (L) Groups, Processes, Jobs, Exits, from
+- [x] **D2 — The four views.** (L) Groups, Processes, Jobs, Exits, from
   `Watch.Data` and the store, with the picked row's history under the
   first two. A module a view.
-- [ ] **D3 — The keys.** (S) `watch`'s keys, through `Watch.State.key/4`,
+- [x] **D3 — The keys.** (S) `watch`'s keys, through `Watch.State.key/4`,
   so that the two cannot come to differ.
 - [ ] **D4 — Node, Remarks, Collector.** (M) The tiles of the node with a
   sparkline each; what the VM remarked on; what the collector let go.

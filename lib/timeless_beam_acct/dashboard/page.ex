@@ -25,7 +25,8 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     use Phoenix.LiveDashboard.PageBuilder, refresher?: true
 
     alias TimelessBeamAcct.{Clock, Human, Remote}
-    alias TimelessBeamAcct.Watch.{Live, Planes, Store}
+    alias TimelessBeamAcct.Dashboard.Opened
+    alias TimelessBeamAcct.Watch.{Live, Planes, State, Store}
 
     @lengths [{"15m", "15 minutes"}, {"1h", "1 hour"}, {"4h", "4 hours"}, {"8h", "8 hours"}]
     @plane_keys [:metrics_url, :logs_url, :traces_url, :token, :metrics_token, :logs_token] ++
@@ -39,13 +40,64 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
     @impl true
     def mount(_params, _session, socket) do
-      {:ok, socket |> assign(said: nil) |> read()}
+      {:ok, socket |> assign(said: nil, watch: nil) |> read()}
     end
 
+    # A recording is opened by its id in the query string, so that it can
+    # be sent to someone.
     @impl true
+    def handle_params(%{"recording" => id}, uri, socket) when id != "" do
+      socket = assign(socket, here: URI.parse(uri).path)
+
+      case Opened.open(id, Keyword.take(configured(), @plane_keys)) do
+        {:ok, watch} ->
+          {:noreply, assign(socket, watch: watch, said: nil, back: socket.assigns.here)}
+
+        {:error, why} ->
+          {:noreply, socket |> assign(watch: nil, said: why) |> read()}
+      end
+    end
+
+    def handle_params(_params, uri, socket),
+      do: {:noreply, assign(socket, watch: nil, here: URI.parse(uri).path)}
+
+    # An opened recording refreshes while it is of now, and a moment that
+    # has passed does not change.
+    @impl true
+    def handle_refresh(%{assigns: %{watch: %{} = watch}} = socket) do
+      if State.live?(watch.state),
+        do: {:noreply, assign(socket, watch: TimelessBeamAcct.Watch.read_moment(watch))},
+        else: {:noreply, socket}
+    end
+
     def handle_refresh(socket), do: {:noreply, read(socket)}
 
     @impl true
+    def handle_event("key", %{"key" => key} = params, %{assigns: %{watch: %{} = watch}} = socket) do
+      case Opened.key(key, params["shiftKey"] == true) do
+        nil ->
+          {:noreply, socket}
+
+        pressed ->
+          watch = Opened.pressed(watch, pressed)
+
+          # q, or escape out of everything, is back to the recordings.
+          if watch.state.quit,
+            do: {:noreply, push_patch(socket, to: socket.assigns.here)},
+            else: {:noreply, assign(socket, watch: watch)}
+      end
+    end
+
+    def handle_event("key", _params, socket), do: {:noreply, socket}
+
+    def handle_event("goto", %{"column" => column}, %{assigns: %{watch: %{} = watch}} = socket) do
+      {:noreply, assign(socket, watch: Opened.go_to_column(watch, String.to_integer(column)))}
+    end
+
+    def handle_event("tab", %{"tab" => n}, %{assigns: %{watch: %{} = watch}} = socket) do
+      {:noreply, assign(socket, watch: Opened.tab(watch, n))}
+    end
+
     def handle_event("record", params, socket) do
       length = if params["length"] == "other", do: params["other"], else: params["length"]
 
@@ -132,6 +184,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
         end
 
       assign(socket,
+        links: Map.new(recordings, &{&1.id, "?" <> URI.encode_query(recording: &1.id)}),
         node: node,
         now: now,
         running: running,
@@ -161,6 +214,14 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     end
 
     @impl true
+    def render(%{watch: %{} = watch} = assigns) do
+      assigns = assign(assigns, opened: watch)
+
+      ~H"""
+      <Opened.recording watch={@opened} back={@back} />
+      """
+    end
+
     def render(assigns) do
       ~H"""
       <div class="tba">
@@ -250,7 +311,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
               <td>{r.node}</td>
               <td>{how(r, @now)}</td>
               <td>{r.by}</td>
-              <td><code>{String.slice(r.id, 0, 8)}</code></td>
+              <td><a href={@links[r.id]}><code>{String.slice(r.id, 0, 8)}</code></a></td>
             </tr>
           </tbody>
         </table>

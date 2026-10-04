@@ -15,6 +15,7 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
       running: nil,
       collecting: false,
       waiting: nil,
+      links: %{},
       recordings: [],
       error: nil
     }

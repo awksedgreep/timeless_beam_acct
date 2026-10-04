@@ -282,8 +282,15 @@ or `additional_pages: [beam: TimelessBeamAcct.Dashboard.Page]` beside a
 `live_dashboard` that is there already. The page is compiled only in an
 application that has `phoenix_live_dashboard`: they are optional
 dependencies of this one, and an application without them fetches
-neither. Starting a recording from the page, and going through one there
-as `watch` does, are next (docs/DASHBOARD_PLAN.md).
+neither.
+
+A recording is started from the page too: how long, now or at a time,
+and what of it to keep. And a recording is opened from the list, as
+`watch` opens one: the timeline of it across the top, to click on, and
+the groups, processes, jobs, and exits as of the moment picked, with
+`watch`'s keys. What is read and what a key does are `watch`'s own, so
+the two do not come to differ. The link has the recording in it, and
+can be sent to someone.
 
 ### To the canvas
 
