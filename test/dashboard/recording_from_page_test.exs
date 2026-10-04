@@ -108,6 +108,9 @@ defmodule TimelessBeamAcct.Dashboard.RecordingFromPageTest do
     assert socket.assigns.said =~ "It now ends at"
     {:noreply, socket} = Page.handle_event("extend", %{"by" => "1h"}, socket)
     assert socket.assigns.said =~ "at most"
+
+    {:noreply, _socket} = Page.handle_event("stop", %{}, socket)
+    refute TimelessBeamAcct.running?()
   end
 
   test "what is not a length is refused, and nothing is started" do
