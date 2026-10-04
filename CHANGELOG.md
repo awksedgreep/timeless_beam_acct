@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2
+
+- The screenshots in the README show on hex.pm. hex.pm shows a README's
+  images from the package, and they are not in it; they are linked from
+  GitHub by their whole address now, which serves GitHub, hex.pm, and the
+  docs alike.
+
 ## 0.3.1
 
 - **A recording that ends by itself stops its collector as

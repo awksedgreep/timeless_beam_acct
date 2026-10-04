@@ -1,7 +1,7 @@
 defmodule TimelessBeamAcct.MixProject do
   use Mix.Project
 
-  @version "0.3.1"
+  @version "0.3.2"
   @source_url "https://github.com/awksedgreep/timeless_beam_acct"
 
   def project do
@@ -66,10 +66,10 @@ defmodule TimelessBeamAcct.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "DESIGN.md", "CHANGELOG.md", "LICENSE"],
-      # The screenshots the README shows, at the same path in the docs as in
-      # the repository, so that one link serves both.
-      assets: %{"docs/images" => "docs/images"}
+      # The README's screenshots are in docs/images, and linked from GitHub by
+      # their whole address: hex.pm shows a README's images from the package,
+      # which they are not in, and the docs from wherever the link says.
+      extras: ["README.md", "DESIGN.md", "CHANGELOG.md", "LICENSE"]
     ]
   end
 end

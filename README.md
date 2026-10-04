@@ -84,7 +84,7 @@ iex> TimelessBeamAcct.trees(failed: true, limit: 1)
 
 ## Status
 
-Version 0.3.1. Collection, the sinks, putting a collector into a running
+Version 0.3.2. Collection, the sinks, putting a collector into a running
 node, the three views, recordings, `watch`, and the page in LiveDashboard
 work and are tested against a live VM, on OTP 27, 28 and 29, and on
 OTP 26 without exit accounting.
@@ -279,7 +279,7 @@ along it is, **Stop**, and **+1 hour**; and the recordings the logs plane
 has, with how each ended.
 
 ![A recording of shop@ohm running, twelve minutes in, with the recordings
-and what the planes hold under it](docs/images/dashboard-running.png)
+and what the planes hold under it](https://raw.githubusercontent.com/awksedgreep/timeless_beam_acct/main/docs/images/dashboard-running.png)
 
 A node being recorded: started from this dashboard, in another node,
 and to end by itself at 13:42. Under it the recordings, and what the
@@ -287,13 +287,13 @@ planes hold and how small: exit records and spans at 10:1 and 16:1, the
 indexes beside them on disk and not in the figure.
 
 ![The form that starts a recording: for how long, now or at a time, and
-what to keep](docs/images/dashboard-record.png)
+what to keep](https://raw.githubusercontent.com/awksedgreep/timeless_beam_acct/main/docs/images/dashboard-record.png)
 
 With none running, the form: for how long, now or at a time of the
 node's, and what to keep. A recording ends by itself, a day at most.
 
 ![A recording opened: the timeline of it, the node at the moment picked,
-and its groups by work](docs/images/dashboard-recording.png)
+and its groups by work](https://raw.githubusercontent.com/awksedgreep/timeless_beam_acct/main/docs/images/dashboard-recording.png)
 
 A recording opened, at its end: the timeline across the top, red where a
 process raised and yellow where one was killed, and the groups as of the
