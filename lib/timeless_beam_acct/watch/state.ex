@@ -44,6 +44,7 @@ defmodule TimelessBeamAcct.Watch.State do
           inspecting: boolean(),
           message: String.t() | nil,
           window: non_neg_integer(),
+          stretch: {float(), float()} | nil,
           step: float()
         }
 
@@ -71,6 +72,10 @@ defmodule TimelessBeamAcct.Watch.State do
             message: nil,
             # Which of the stretches the timeline shows.
             window: 1,
+            # A stretch the timeline shows instead of one of the windows:
+            # a recording's own, from its beginning to its end. Drawing
+            # the timeline out or in lets go of it.
+            stretch: nil,
             # Seconds between the store's samples: the smallest step in time.
             step: 10.0
 
@@ -104,6 +109,7 @@ defmodule TimelessBeamAcct.Watch.State do
 
   @doc "How long a stretch the timeline shows, in seconds."
   @spec window(t()) :: float()
+  def window(%__MODULE__{stretch: {from, to}}) when to > from, do: to - from
   def window(%__MODULE__{window: window}), do: elem(@windows, window)
 
   @spec live?(t()) :: boolean()
@@ -269,14 +275,18 @@ defmodule TimelessBeamAcct.Watch.State do
         {state, :go}
 
       {:char, char} when char in ["-", "_"] ->
-        if state.window + 1 == tuple_size(@windows),
-          do: {state, :nothing},
-          else: {%{state | window: state.window + 1}, :moment}
+        cond do
+          state.stretch -> {%{state | stretch: nil}, :moment}
+          state.window + 1 == tuple_size(@windows) -> {state, :nothing}
+          true -> {%{state | window: state.window + 1}, :moment}
+        end
 
       {:char, char} when char in ["+", "="] ->
-        if state.window == 0,
-          do: {state, :nothing},
-          else: {%{state | window: state.window - 1}, :moment}
+        cond do
+          state.stretch -> {%{state | stretch: nil}, :moment}
+          state.window == 0 -> {state, :nothing}
+          true -> {%{state | window: state.window - 1}, :moment}
+        end
 
       {:char, "t"} ->
         {%{state | going: ""}, :view}

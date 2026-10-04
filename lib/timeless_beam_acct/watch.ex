@@ -104,6 +104,7 @@ defmodule TimelessBeamAcct.Watch do
       state =
         %{State.new(at, @spacing) | tab: view, message: said}
         |> State.fit(opts[:span])
+        |> Map.put(:stretch, opts[:stretch])
 
       {:ok,
        %__MODULE__{
@@ -151,6 +152,7 @@ defmodule TimelessBeamAcct.Watch do
                opts
                |> Keyword.merge(store_node: found.node, at: at)
                |> Keyword.put(:span, (ended || now) - found.started)
+               |> Keyword.put(:stretch, {found.started, ended || found.stop_at})
                |> Keyword.delete(:recording)}
 
             [] ->
@@ -404,6 +406,35 @@ defmodule TimelessBeamAcct.Watch do
 
   # Read the timeline: how busy the schedulers were, and what went wrong,
   # over a stretch that has the moment looked at in it.
+  # A recording's own stretch, whole, wherever the moment is in it.
+  defp read_timeline(%__MODULE__{state: %State{stretch: {from, to}}} = watch) when to > from do
+    window = {from / 1, to / 1}
+
+    case watch.timeline_read do
+      {_at, ^window} ->
+        watch
+
+      _ ->
+        {timeline, step} = Store.timeline(watch.store, from, to)
+
+        {incidents, store} =
+          Store.incidents(watch.store, from, to, max(watch.columns - 2, 1))
+
+        %{
+          watch
+          | store: store,
+            timeline_read: {System.monotonic_time(:millisecond), window},
+            detail: %{
+              watch.detail
+              | timeline: timeline,
+                timeline_step: step,
+                incidents: incidents,
+                window: window
+            }
+        }
+    end
+  end
+
   defp read_timeline(%__MODULE__{state: state, detail: detail} = watch) do
     span = State.window(state)
 

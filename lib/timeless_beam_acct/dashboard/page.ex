@@ -274,108 +274,212 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       assigns = assign(assigns, opened: watch)
 
       ~H"""
+      <.styles />
       <Opened.recording watch={@opened} back={@back} extra={@extra} extra_data={@extra_data} />
       """
     end
 
     def render(assigns) do
       ~H"""
+      <.styles />
       <div class="tba">
-        <style>
-          .tba table { width: 100%; font-variant-numeric: tabular-nums; }
-          .tba th, .tba td { padding: 0.25rem 0.75rem; text-align: left; white-space: nowrap; }
-          .tba .tba-banner { padding: 0.75rem 1rem; margin-bottom: 1rem; border-radius: 0.25rem; background: rgba(0, 128, 255, 0.08); }
-          .tba .tba-bar { height: 0.4rem; background: rgba(0, 0, 0, 0.1); border-radius: 0.2rem; margin: 0.5rem 0; }
-          .tba .tba-bar > div { height: 100%; background: #0a7; border-radius: 0.2rem; }
-          .tba .tba-said { margin-bottom: 1rem; }
-          .tba .tba-error { color: #c33; margin-bottom: 1rem; }
-        </style>
+        <div :if={@said} class="alert alert-info py-2">{@said}</div>
 
-        <div :if={@said} class="tba-said">{@said}</div>
-
-        <div :if={@running} class="tba-banner">
-          <strong>Recording {@node}</strong>,
-          started {Clock.format(@running.started)}{if @running.by, do: " by #{@running.by}"},
-          {Human.duration(@now - @running.started)} of {Human.duration(@running.stop_at - @running.started)};
-          it ends by itself at {Clock.format(@running.stop_at)}.
-          <div class="tba-bar"><div style={"width: #{progress(@running, @now)}%"}></div></div>
-          <button phx-click="stop" data-confirm="Stop this recording now?">Stop</button>
-          <button phx-click="extend" phx-value-by="1h">+1 hour</button>
-        </div>
-
-        <div :if={@waiting} class="tba-banner">
-          <strong>{@node} is to be recorded</strong>
-          from {Clock.format(@waiting.start_at)}, for {Human.duration(@waiting.stop_after)}{if @waiting.by,
-            do: ", as asked by #{@waiting.by}"}. Until then it waits, and reads nothing.
-          <div>
-            <button phx-click="stop" data-confirm="Call this recording off?">Call it off</button>
+        <div :if={@running} class="card mb-4">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h5 class="card-title mb-1">
+                  <span class="badge badge-danger tba-rec">● REC</span> Recording {@node}
+                </h5>
+                <small class="text-muted">
+                  started {Clock.format(@running.started)}{if @running.by, do: " by #{@running.by}"}
+                  · ends by itself at {Clock.format(@running.stop_at)}
+                </small>
+              </div>
+              <div class="text-nowrap">
+                <button phx-click="extend" phx-value-by="1h" class="btn btn-sm btn-outline-secondary">
+                  +1 hour
+                </button>
+                <button phx-click="stop" data-confirm="Stop this recording now?" class="btn btn-sm btn-danger ml-1">
+                  Stop
+                </button>
+              </div>
+            </div>
+            <div class="progress mt-3" style="height: 6px">
+              <div class="progress-bar" role="progressbar" style={"width: #{progress(@running, @now)}%"}></div>
+            </div>
+            <div class="d-flex justify-content-between mt-1">
+              <small class="text-muted">{Human.duration(@now - @running.started)} recorded</small>
+              <small class="text-muted">{Human.duration(max(@running.stop_at - @now, 0))} left</small>
+            </div>
           </div>
         </div>
 
-        <p :if={!@running and @collecting and !@waiting}>
-          A collector is running in {@node}, and is not a recording: it runs until it is
-          stopped. It was started in code or by <code>attach</code>, without <code>stop_after</code>.
-        </p>
+        <div :if={@waiting} class="card mb-4">
+          <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+              <h5 class="card-title mb-1">{@node} is to be recorded</h5>
+              <small class="text-muted">
+                from {Clock.format(@waiting.start_at)}, for {Human.duration(@waiting.stop_after)}{if @waiting.by,
+                  do: ", as asked by #{@waiting.by}"}. Until then it waits, and reads nothing.
+              </small>
+            </div>
+            <button phx-click="stop" data-confirm="Call this recording off?" class="btn btn-sm btn-outline-danger">
+              Call it off
+            </button>
+          </div>
+        </div>
 
-        <form :if={!@running and !@collecting} phx-submit="record" class="tba-banner">
-          <strong>Record {@node}</strong>
-          <div>
-            for
-            <label :for={{value, label} <- lengths()}>
-              <input type="radio" name="length" value={value} checked={value == "1h"} /> {label}
-            </label>
-            <label><input type="radio" name="length" value="other" /></label>
-            <input type="text" name="other" placeholder="90m" size="5" />
-          </div>
-          <div>
-            start
-            <label><input type="radio" name="start" value="now" checked /> now</label>
-            <label><input type="radio" name="start" value="at" /> at</label>
-            <input type="text" name="start_at" placeholder="01:55" size="6" />
-            <small>(the node's time; a time that has passed today is tomorrow)</small>
-          </div>
-          <div>
-            <label>
-              <input type="checkbox" name="processes" value="true" checked />
-              a series for each notable process (more to look at, more to store)
-            </label>
-          </div>
-          <div>
-            <label>
-              <input type="checkbox" name="failed_only" value="true" />
-              a record only of processes that failed (less to store on a busy node)
-            </label>
-          </div>
-          <p :if={@estimate}>{@estimate} It ends by itself; a day at most.</p>
-          <p :if={!@estimate}>
-            A recording costs a node about 5% of one core where 65 processes end a second, and
-            less where fewer do. It ends by itself; a day at most.
-          </p>
-          <button type="submit" data-confirm={"Record #{@node}?"}>Record</button>
-        </form>
+        <div :if={!@running and @collecting and !@waiting} class="alert alert-secondary">
+          A collector is running in <strong>{@node}</strong>, and is not a recording: it runs
+          until it is stopped. It was started in code or by <code>attach</code>, without
+          <code>stop_after</code>.
+        </div>
 
-        <div :if={@error} class="tba-error">{@error}</div>
+        <div :if={!@running and !@collecting} class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">Record {@node}</h5>
+            <form phx-submit="record">
+              <div class="form-group row mb-2">
+                <label class="col-sm-2 col-form-label col-form-label-sm text-muted">For</label>
+                <div class="col-sm-10 d-flex align-items-center flex-wrap">
+                  <div :for={{value, label} <- lengths()} class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="length" id={"len-#{value}"} value={value} checked={value == "1h"} />
+                    <label class="form-check-label" for={"len-#{value}"}>{label}</label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="length" id="len-other" value="other" />
+                    <input type="text" name="other" placeholder="90m" class="form-control form-control-sm" style="width: 5rem" />
+                  </div>
+                </div>
+              </div>
+              <div class="form-group row mb-2">
+                <label class="col-sm-2 col-form-label col-form-label-sm text-muted">Start</label>
+                <div class="col-sm-10 d-flex align-items-center flex-wrap">
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="start" id="start-now" value="now" checked />
+                    <label class="form-check-label" for="start-now">now</label>
+                  </div>
+                  <div class="form-check form-check-inline">
+                    <input class="form-check-input" type="radio" name="start" id="start-at" value="at" />
+                    <label class="form-check-label mr-2" for="start-at">at</label>
+                    <input type="text" name="start_at" placeholder="01:55" class="form-control form-control-sm" style="width: 6rem" />
+                  </div>
+                  <small class="text-muted">the node's time; a time that has passed today is tomorrow</small>
+                </div>
+              </div>
+              <div class="form-group row mb-3">
+                <label class="col-sm-2 col-form-label col-form-label-sm text-muted">Keep</label>
+                <div class="col-sm-10">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="processes" value="true" id="keep-processes" checked />
+                    <label class="form-check-label" for="keep-processes">
+                      a series for each notable process <small class="text-muted">(more to look at, more to store)</small>
+                    </label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="failed_only" value="true" id="keep-failed" />
+                    <label class="form-check-label" for="keep-failed">
+                      a record only of processes that failed <small class="text-muted">(less to store on a busy node)</small>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">
+                  {@estimate || "A recording costs a node about 5% of one core where 65 processes end a second, and less where fewer do."}
+                  It ends by itself; a day at most.
+                </small>
+                <button type="submit" data-confirm={"Record #{@node}?"} class="btn btn-primary btn-sm ml-3">
+                  Record
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
 
-        <h5>Recordings</h5>
-        <table :if={@recordings != []}>
-          <thead>
-            <tr><th>Started</th><th>Length</th><th>Node</th><th>Ended</th><th>By</th><th>Id</th></tr>
-          </thead>
-          <tbody>
-            <tr :for={r <- @recordings}>
-              <td>{Clock.format(r.started)}</td>
-              <td>{length_of(r, @now)}</td>
-              <td>{r.node}</td>
-              <td>{how(r, @now)}</td>
-              <td>{r.by}</td>
-              <td><a href={@links[r.id]}><code>{String.slice(r.id, 0, 8)}</code></a></td>
-            </tr>
-          </tbody>
-        </table>
-        <p :if={@recordings == [] and !@error}>No recordings in the last 31 days.</p>
+        <div :if={@error} class="alert alert-danger py-2">{@error}</div>
+
+        <div class="card">
+          <div class="card-header d-flex justify-content-between">
+            <span>Recordings</span>
+            <small class="text-muted">the last 31 days · click one to go through it</small>
+          </div>
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Node</th>
+                <th class="text-right">Length</th>
+                <th>Ended</th>
+                <th>By</th>
+                <th class="text-right">Id</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={r <- @recordings}>
+                <td><a href={@links[r.id]}>{Clock.format(r.started)}</a></td>
+                <td>{r.node}</td>
+                <td class="text-right">{length_of(r, @now)}</td>
+                <td><span class={["badge", badge(r, @now)]}>{how(r, @now)}</span></td>
+                <td class="text-muted">{r.by}</td>
+                <td class="text-right"><a href={@links[r.id]} class="text-monospace small">{String.slice(r.id, 0, 8)}</a></td>
+              </tr>
+              <tr :if={@recordings == [] and !@error}>
+                <td colspan="6" class="text-center text-muted py-4">No recordings in the last 31 days.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       """
     end
+
+    # What the page draws with, beside LiveDashboard's own.
+    defp styles(assigns) do
+      ~H"""
+      <style>
+        .tba .tba-moment { font-size: 0.9rem; font-weight: 500; padding: 0.4em 0.7em; }
+        .tba .tba-rec { font-size: 0.7rem; vertical-align: middle; }
+        .tba svg.tba-chart { width: 100%; display: block; }
+        .tba .tba-axis { stroke: rgba(0, 0, 0, 0.15); stroke-width: 1; }
+        .tba .tba-bar { fill: #6c8fd5; }
+        .tba .tba-bar-alt { fill: #3fa7a0; }
+        .tba .tba-fault { fill: #dc3545; color: #dc3545; }
+        .tba .tba-kill { fill: #e0a800; color: #e0a800; }
+        .tba .tba-cursor { stroke: #212529; stroke-width: 2; stroke-dasharray: 4 3; }
+        .tba .tba-hit { fill: transparent; cursor: pointer; }
+        .tba .tba-hit:hover { fill: rgba(0, 0, 0, 0.06); }
+        .tba .nav-tabs .nav-link { cursor: pointer; }
+        .tba .tba-tabbed { border-top-left-radius: 0; border-top: 0; }
+        .tba .tba-scroll { max-height: 26rem; overflow-y: auto; }
+        .tba .tba-scroll-short { max-height: 16rem; }
+        .tba .tba-scroll thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+        .tba table td, .tba table th { white-space: nowrap; padding-left: 0.75rem; padding-right: 0.75rem; }
+        .tba table td:first-child, .tba table th:first-child { padding-left: 1.25rem; }
+        .tba table td:last-child, .tba table th:last-child { padding-right: 1.25rem; }
+        .tba .tba-stats .banner-card { min-height: 0; height: auto !important; padding: 0.6rem 1rem; }
+        .tba .tba-stats .banner-card-title { margin-bottom: 0.15rem; }
+        .tba .tba-future { fill: rgba(0, 0, 0, 0.035); }
+        .tba .tba-name { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; }
+        .tba .text-right { font-variant-numeric: tabular-nums; }
+        .tba .tba-stats .banner-card-value { font-size: 1.4rem; }
+        .tba pre.tba-tree { font-size: 0.8rem; white-space: pre; overflow-x: auto; }
+        .tba kbd { font-size: 0.7rem; padding: 0.1rem 0.3rem; margin: 0 1px; }
+        .tba .tba-keys { line-height: 1.9; }
+      </style>
+      """
+    end
+
+    defp badge(%{ended: ended, reason: "time"}, _now) when is_number(ended), do: "badge-success"
+
+    defp badge(%{ended: ended, reason: "stopped"}, _now) when is_number(ended),
+      do: "badge-secondary"
+
+    defp badge(%{ended: ended}, _now) when is_number(ended), do: "badge-warning"
+    defp badge(%{stop_at: stop_at}, now) when stop_at > now, do: "badge-danger"
+    defp badge(_recording, _now), do: "badge-warning"
 
     defp progress(recording, now) do
       length = max(recording.stop_at - recording.started, 1.0)
@@ -394,8 +498,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
     defp how(%{ended: ended, reason: "stopped"}, _now) when is_number(ended), do: "it was stopped"
     defp how(%{ended: ended}, _now) when is_number(ended), do: "what it ran in went first"
 
-    defp how(%{stop_at: stop_at}, now) when stop_at > now,
-      do: "running, until #{Clock.format(stop_at)}"
+    defp how(%{stop_at: stop_at}, now) when stop_at > now, do: "recording"
 
     defp how(_recording, _now), do: "its node ended first"
   end

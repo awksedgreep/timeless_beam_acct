@@ -38,7 +38,8 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
 
     assert html =~ "Recording app@ohm"
     assert html =~ "by mark@ohm"
-    assert html =~ "30m00s of 1h00m"
+    assert html =~ "30m00s recorded"
+    assert html =~ "30m00s left"
     assert html =~ "width: 50.0%"
     assert html =~ ~s(phx-click="stop")
     assert html =~ ~s(phx-value-by="1h")
@@ -78,7 +79,7 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
 
   test "a collector that is not a recording is said to be one" do
     html = page(collecting: true)
-    assert html =~ "A collector is running in app@ohm, and is not a recording"
+    assert html =~ "A collector is running in <strong>app@ohm</strong>, and is not a recording"
     refute html =~ "No recording is running"
   end
 
@@ -128,11 +129,11 @@ defmodule TimelessBeamAcct.Dashboard.PageTest do
 
     html = page(recordings: recordings)
     assert html =~ "10m00s so far"
-    assert html =~ "running, until"
+    assert html =~ ~s(badge badge-danger">recording)
     assert html =~ "its time ran out"
     assert html =~ "it was stopped"
     assert html =~ "its node ended first"
-    assert html =~ "<code>bbbbbbbb</code>"
+    assert html =~ ~r/>\s*bbbbbbbb\s*</
     refute html =~ "No recordings"
   end
 

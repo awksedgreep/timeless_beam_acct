@@ -93,7 +93,8 @@ defmodule TimelessBeamAcct.Dashboard.OpenedTest do
         extra_data: node
       )
 
-    assert html =~ "schedulers: <strong>2.0%</strong>"
+    assert html =~ "schedulers"
+    assert html =~ "<strong>2.0%</strong>"
     assert html =~ "garbage collections /s"
     # watch's view is not drawn under the page's own.
     refute html =~ "GROUP"
@@ -133,7 +134,7 @@ defmodule TimelessBeamAcct.Dashboard.OpenedTest do
       )
 
     assert html =~ "beam_acct_processes"
-    assert html =~ "<td>512</td>"
+    assert html =~ ~r/text-right">\s*512\s*</
 
     html =
       render_component(&Opened.recording/1,
@@ -149,18 +150,19 @@ defmodule TimelessBeamAcct.Dashboard.OpenedTest do
   test "it is drawn as watch's screen is" do
     html = html(watch())
     assert html =~ ~s(phx-window-keydown="key")
-    assert html =~ "◀ "
-    assert html =~ "run queue 2"
+    assert html =~ "badge badge-warning tba-moment"
+    assert html =~ " ago"
+    assert html =~ ~r/Run queue<\/h6>\s*<div class="banner-card-value">\s*2\s*</
     assert html =~ "MyApp.Repo"
-    assert html =~ "1 Groups"
-    assert html =~ "MyApp.Repo work, the 10m00s before"
+    assert html =~ ~r/Groups\s*<small class="text-muted">1<\/small>/
+    assert html =~ "MyApp.Repo work</strong>, the 10m00s before"
     # A column to click for each part of the stretch, and what went wrong marked.
     assert length(Regex.scan(~r/phx-click="goto"/, html)) == Opened.columns()
-    assert html =~ ~s(fill="#c33")
+    assert html =~ ~s(class="tba-fault")
     assert html =~ ~s(href="/dashboard/beam")
 
     exits = html(Opened.tab(watch(), "4"))
-    assert exits =~ "PEAK MEM"
+    assert exits =~ "Peak memory"
     jobs = html(Opened.tab(watch(), "3"))
     assert jobs =~ "No jobs in the quarter of an hour before"
   end
