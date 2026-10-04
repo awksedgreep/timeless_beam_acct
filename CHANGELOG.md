@@ -56,6 +56,12 @@
   as it is: from timeless_phoenix 2.0.4 it has the page among its own.
   Run in both orders with timeless_phoenix's installer against a new
   `mix phx.new` application, the page was in the menu of each.
+- **The installer configures no collector unless told `--always-on`.**
+  It adds the page of recordings and where the planes are, and nothing
+  is collected until a recording is started. It used to write
+  `start: true`: a collector that started with the application and ran
+  until it was stopped, which is not how it is meant to be run. `--sink`
+  is said with `--always-on`, and refused without it.
 - A collector started from the configuration (`start: true`) no longer
   takes `:dashboard`, the page's, for an option of its own. The
   installer writes both in an application with LiveDashboard, and the

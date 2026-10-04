@@ -4,42 +4,55 @@ if Code.ensure_loaded?(Igniter) do
     @moduledoc """
     #{@shortdoc}
 
-    Configures a collector to start with the application, and to stay off
-    while the application's tests run.
+    Adds the page of recordings to the application's LiveDashboard, and
+    says where the planes are for it. Nothing is collected until a
+    recording is started: from the page, with `mix
+    timeless_beam_acct.record`, or with `stop_after:` in code. A recording
+    ends by itself.
 
     ## Usage
 
         mix igniter.install timeless_beam_acct
-        mix igniter.install timeless_beam_acct --sink timeless
         mix igniter.install timeless_beam_acct --metrics-url http://planes:8428
+        mix igniter.install timeless_beam_acct --always-on
+        mix igniter.install timeless_beam_acct --always-on --sink timeless
 
     ## Options
 
-      * `--sink`: `http` (the default), `timeless`, or `stdout`. `http` is
-        the Timeless planes, which is what a canvas reads. `timeless` is
-        the Timeless stores in the node, for an application that has them
-        through `timeless_phoenix`.
       * `--metrics-url`, `--logs-url`, `--traces-url`: where the planes
         are, if they are not on this host at the ports they keep unless
         told.
+      * `--always-on`: a collector that starts with the application and
+        runs until it is stopped, as well. Not a recording: it does not
+        end by itself, and a collector left running fills the planes with
+        the series of processes (DESIGN.md, "How many series that is, over
+        time"). Asked for, never assumed.
+      * `--sink`: with `--always-on`, where it writes: `http` (the
+        default), `timeless`, or `stdout`. `http` is the Timeless planes,
+        which is what a canvas reads. `timeless` is the Timeless stores in
+        the node, for an application that has them through
+        `timeless_phoenix`.
 
     ## What it does
 
-    1. Adds `config :timeless_beam_acct, start: true, sink: ...` to
-       `config.exs`
-    2. Adds `config :timeless_beam_acct, start: false` to `test.exs`
-    3. Adds the page of recordings ("TimelessAcct") to the
+    1. Adds the page of recordings ("TimelessAcct") to the
        `live_dashboard` in the router, and says where the planes are for
        it: `config :timeless_beam_acct, :dashboard, ...`. A router with
        timeless_phoenix's dashboard is left as it is, since that has the
        page among its own; a dashboard whose `additional_pages` are not
        a list written out is left as it is, and what to add is said
-    4. Says what was turned on, and how to see that it is working
+    2. Says how a recording is started
+
+    And with `--always-on`:
+
+    3. Adds `config :timeless_beam_acct, start: true, sink: ...` to
+       `config.exs`
+    4. Adds `config :timeless_beam_acct, start: false` to `test.exs`
 
     What is there already is left as it is: an application that has said
     `start: false` has said so for a reason.
 
-    With `--sink timeless` it does otherwise, and adds
+    With `--always-on --sink timeless` it does otherwise, and adds
     `{TimelessBeamAcct, sink: :timeless}` to the children of the
     application's supervisor, after those that are there. The stores in
     the node are children of the application, and have to be running
@@ -102,25 +115,39 @@ if Code.ensure_loaded?(Igniter) do
     def info(_argv, _composing_task) do
       %Igniter.Mix.Task.Info{
         group: :timeless_beam_acct,
-        schema: [sink: :string, metrics_url: :string, logs_url: :string, traces_url: :string],
-        defaults: [sink: "http"],
+        schema: [
+          always_on: :boolean,
+          sink: :string,
+          metrics_url: :string,
+          logs_url: :string,
+          traces_url: :string
+        ],
+        defaults: [always_on: false],
         required: [],
         positional: [],
         aliases: [],
         composes: [],
         installs: [],
         adds_deps: [],
-        example: "mix igniter.install timeless_beam_acct --sink timeless"
+        example: "mix igniter.install timeless_beam_acct"
       }
     end
 
     @impl Igniter.Mix.Task
     def igniter(igniter) do
       options = igniter.args.options
+      always_on = options[:always_on] == true
       sink = options[:sink] || "http"
       urls = for key <- @urls, url = options[key], do: {key, url}
 
       cond do
+        options[:sink] != nil and not always_on ->
+          Igniter.add_issue(
+            igniter,
+            "--sink is where a collector that is always on writes, and is said " <>
+              "with --always-on. A recording writes to the planes"
+          )
+
         sink not in @sinks ->
           Igniter.add_issue(
             igniter,
@@ -135,6 +162,13 @@ if Code.ensure_loaded?(Igniter) do
             "--#{key |> Atom.to_string() |> String.replace("_", "-")} is an option of the " <>
               "http sink, and the sink is #{sink}"
           )
+
+        # Nothing collected until a recording is started; where a recording
+        # writes is where the page reads.
+        not always_on ->
+          igniter
+          |> Igniter.add_notice(recording_notice())
+          |> dashboard(urls)
 
         sink == "timeless" ->
           igniter
@@ -379,9 +413,26 @@ if Code.ensure_loaded?(Igniter) do
       end)
     end
 
+    defp recording_notice do
+      """
+      TimelessBeamAcct collects nothing until a recording is started, and a
+      recording ends by itself: as long as it was told, a day at most.
+
+      From the TimelessAcct page of LiveDashboard: Record. Or from a shell:
+
+          mix timeless_beam_acct.record NODE --for 1h
+
+      or in code: TimelessBeamAcct.start_link(sink: :http, stop_after: "1h")
+
+      A collector that starts with the application and runs until it is
+      stopped, not a recording, is asked for with --always-on.
+      """
+    end
+
     defp notice(sink) do
       """
-      TimelessBeamAcct is configured to start with the application.
+      TimelessBeamAcct is configured to start with the application, and to
+      run until it is stopped: it is always on, and not a recording.
 
       A collector hears from the VM of every process that starts and ends,
       and sweeps the processes every ten seconds. #{where(sink)}

@@ -103,21 +103,36 @@ With [Igniter](https://hexdocs.pm/igniter):
 
 ```sh
 mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct
-mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --sink timeless
 ```
 
-It configures a collector to start with the application, and to stay off
+It adds the page of recordings to the application's LiveDashboard, with
+where the planes are for it, and nothing else: no collector is
+configured, and nothing is collected until a recording is started, from
+the page, with `mix timeless_beam_acct.record`, or with `stop_after:` in
+code. A recording ends by itself. `--metrics-url`, `--logs-url`, and
+`--traces-url` say where the planes are.
+
+A collector that starts with the application and runs until it is
+stopped is asked for, and never assumed:
+
+```sh
+mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --always-on
+mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --always-on --sink timeless
+```
+
+That configures one to start with the application, and to stay off
 while the application's tests run. `--sink` is `http` (the default),
-`timeless`, or `stdout`, and `--metrics-url`, `--logs-url`, and
-`--traces-url` say where the planes are. With `--sink timeless` the
-collector is put among the application's children instead, after the
-stores it writes to, and runs while the tests run as they do:
+`timeless`, or `stdout`. With `--sink timeless` the collector is put
+among the application's children instead, after the stores it writes
+to, and runs while the tests run as they do:
 [To the stores in the node](#to-the-stores-in-the-node) has what was
-found of that.
+found of that. A collector left running is not light on the planes
+(DESIGN.md, "How many series that is, over time"); a recording is the
+way it is meant to be run.
 
 `mix igniter.install` brings Igniter for as long as it runs. With the
-package among the dependencies already, `mix timeless_beam_acct.install
---sink timeless` does the same, and needs Igniter among them too:
+package among the dependencies already, `mix timeless_beam_acct.install`
+does the same, and needs Igniter among them too:
 `{:igniter, "~> 0.6", only: [:dev, :test], runtime: false}`.
 
 Or by hand:
@@ -312,7 +327,7 @@ timeless_beam_acct_dashboard "/beam",
 The page is under `beam` in each: `/dashboard/beam`, `/beam/beam`.
 
 **By the installer.** `mix timeless_beam_acct.install` (or `mix
-igniter.install timeless_beam_acct`) adds the page to the
+igniter.install timeless_beam_acct`), which starts no collector, adds the page to the
 `live_dashboard` in the router, the one `mix phx.new` makes among them,
 and says where the planes are in `config.exs`. Run again, it adds
 nothing more. A dashboard whose `additional_pages` are not written out

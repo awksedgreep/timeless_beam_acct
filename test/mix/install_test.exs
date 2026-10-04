@@ -54,7 +54,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
     do: content |> String.split("\n") |> Enum.reject(&(&1 =~ "import_config")) |> Enum.join("\n")
 
   test "a collector is started with the application, and not with its tests" do
-    igniter = install([])
+    igniter = install(~w(--always-on))
 
     assert igniter.issues == []
     assert configured(igniter, "config/config.exs") == [start: true, sink: :http]
@@ -64,7 +64,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
   end
 
   test "what is written is what a collector can be started with" do
-    igniter = install(~w(--sink stdout))
+    igniter = install(~w(--always-on --sink stdout))
     options = igniter |> configured("config/config.exs") |> Keyword.delete(:start)
 
     assert %TimelessBeamAcct.Options{sink: {TimelessBeamAcct.Sink.Stdout, []}} =
@@ -72,7 +72,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
   end
 
   test "for the stores in the node, the collector is put among the children, after them" do
-    igniter = install(~w(--sink timeless))
+    igniter = install(~w(--always-on --sink timeless))
 
     assert igniter.issues == []
     application = content(igniter, "lib/demo/application.ex")
@@ -112,7 +112,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
 
     igniter =
       install(
-        ~w(--sink timeless),
+        ~w(--always-on --sink timeless),
         files("import Config\n", %{"lib/demo/application.ex" => application})
       )
 
@@ -141,7 +141,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
 
     igniter =
       install(
-        ~w(--sink timeless),
+        ~w(--always-on --sink timeless),
         files("import Config\n", %{"lib/demo/application.ex" => application})
       )
 
@@ -150,7 +150,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
   end
 
   test "for the stores in the node, it says which store, and what to write for another" do
-    igniter = install(~w(--sink timeless))
+    igniter = install(~w(--always-on --sink timeless))
 
     assert [notice] = igniter.notices
     assert notice =~ ":tp_default_timeless"
@@ -160,7 +160,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
 
   test "the planes are where they are said to be" do
     igniter =
-      install(~w(--metrics-url http://planes:8428 --traces-url http://planes:10428))
+      install(~w(--always-on --metrics-url http://planes:8428 --traces-url http://planes:10428))
 
     assert configured(igniter, "config/config.exs") == [
              start: true,
@@ -185,18 +185,18 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
     config :timeless_beam_acct, start: false, sink: :stdout, min_age: 5
     """
 
-    igniter = install(~w(--sink http), files(config))
+    igniter = install(~w(--always-on --sink http), files(config))
 
     assert configured(igniter, "config/config.exs") == [start: false, sink: :stdout, min_age: 5]
   end
 
   test "the application's supervisor is not touched" do
-    igniter = install([])
+    igniter = install(~w(--always-on))
     assert content(igniter, "lib/demo/application.ex") == files()["lib/demo/application.ex"]
   end
 
   test "it says what was turned on, and how to turn it off" do
-    igniter = install([])
+    igniter = install(~w(--always-on))
 
     assert [notice] = igniter.notices
     assert notice =~ "every process that starts and ends"
@@ -206,7 +206,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
   end
 
   test "a sink that is not one is refused, and nothing is written" do
-    igniter = install(~w(--sink prometheus))
+    igniter = install(~w(--always-on --sink prometheus))
 
     assert [issue] = igniter.issues
     assert issue == "--sink is prometheus: expected one of http, timeless, stdout"
@@ -215,7 +215,7 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
   end
 
   test "where the planes are is not said to another sink" do
-    igniter = install(~w(--sink timeless --logs-url http://planes:9428))
+    igniter = install(~w(--always-on --sink timeless --logs-url http://planes:9428))
 
     assert [issue] = igniter.issues
     assert issue == "--logs-url is an option of the http sink, and the sink is timeless"
@@ -347,7 +347,43 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
 
     test "an application with no router hears nothing of it" do
       igniter = install([])
-      refute Enum.any?(igniter.notices, &(&1 =~ "LiveDashboard"))
+      refute Enum.any?(igniter.notices, &(&1 =~ "No LiveDashboard was found"))
+    end
+  end
+
+  describe "without --always-on" do
+    test "nothing is collected: no collector is configured, and none is a child" do
+      igniter = install([])
+
+      assert igniter.issues == []
+      assert configured(igniter, "config/config.exs") == []
+      assert content(igniter, "config/test.exs") == nil
+      assert content(igniter, "lib/demo/application.ex") == files()["lib/demo/application.ex"]
+    end
+
+    test "with a dashboard, only the page and where the planes are" do
+      igniter = install(~w(--metrics-url http://planes:8428), router(@generated))
+
+      assert Keyword.keys(configured(igniter, "config/config.exs")) == [:dashboard]
+      assert page_config(igniter)[:metrics_url] == "http://planes:8428"
+    end
+
+    test "it says how a recording is started, and that it ends by itself" do
+      igniter = install([])
+
+      assert [notice] = igniter.notices
+      assert notice =~ "collects nothing until a recording is started"
+      assert notice =~ "mix timeless_beam_acct.record NODE --for 1h"
+      assert notice =~ "--always-on"
+    end
+
+    test "a sink is refused: it is where a collector that is always on writes" do
+      igniter = install(~w(--sink timeless))
+
+      assert [issue] = igniter.issues
+      assert issue =~ "--always-on"
+      assert content(igniter, "config/config.exs") == "import Config\n"
+      assert content(igniter, "lib/demo/application.ex") == files()["lib/demo/application.ex"]
     end
   end
 
