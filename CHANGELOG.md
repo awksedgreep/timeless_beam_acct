@@ -68,6 +68,11 @@ while a recording is made, and not before.
   `start: true`: a collector that started with the application and ran
   until it was stopped, which is not how it is meant to be run. `--sink`
   is said with `--always-on`, and refused without it.
+- A recording that ends by itself stops its collector as
+  `TimelessBeamAcct.stop/1` does, normally. It used to end with the
+  `:shutdown` of a supervisor ending itself, which ended what had called
+  `start_link/1` with it: an iex shell that started a recording lost
+  itself an hour later.
 - A recording whose node ended without warning, and was started again,
   is no longer shown as recording until its time would have run out.
   The page asks the node, where it is connected to it

@@ -138,7 +138,8 @@ defmodule TimelessBeamAcct.Recording do
       id: id(options, started),
       started: started,
       stop_at: stop_at,
-      timer: nil
+      timer: nil,
+      ended: false
     }
 
     write(state, "started", nil)
@@ -181,9 +182,15 @@ defmodule TimelessBeamAcct.Recording do
     else
       write(state, "ended", "time")
       Writer.flush(state.options)
-      # A normal end of a significant child ends the supervisor, and with
-      # it the collector, which accounts and flushes as it goes.
-      {:stop, :normal, %{state | timer: nil}}
+
+      # The collector is stopped as `TimelessBeamAcct.stop/1` stops one,
+      # normally, so that what started it is not ended with it: a shell
+      # that called `start_link/1` would be by the `:shutdown` of a
+      # supervisor ending itself. From another process, since this one is
+      # among what is stopped.
+      name = state.options.name
+      spawn(fn -> TimelessBeamAcct.stop(name) end)
+      {:noreply, %{state | timer: nil, ended: true}}
     end
   end
 
@@ -191,7 +198,7 @@ defmodule TimelessBeamAcct.Recording do
   def handle_info(_other, state), do: {:noreply, state}
 
   @impl true
-  def terminate(:normal, %{timer: nil}), do: :ok
+  def terminate(_reason, %{ended: true}), do: :ok
 
   def terminate(reason, state) do
     write(state, "ended", if(reason == :shutdown, do: "stopped", else: "shutdown"))

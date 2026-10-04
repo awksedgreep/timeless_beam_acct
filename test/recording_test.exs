@@ -40,7 +40,7 @@ defmodule TimelessBeamAcct.RecordingTest do
 
     assert_in_delta stop_at - started, 1.0, 0.01
 
-    assert_receive {:DOWN, ^ref, :process, ^sup, :shutdown}, 5_000
+    assert_receive {:DOWN, ^ref, :process, ^sup, :normal}, 5_000
     refute TimelessBeamAcct.running?(name)
 
     assert [started_record, ended_record] = recorded(500)
@@ -50,6 +50,26 @@ defmodule TimelessBeamAcct.RecordingTest do
     assert ended_record.message =~ "its time ran out"
     # Its records are not the records of processes that ended.
     assert TimelessBeamAcct.records(name: name) == []
+  end
+
+  test "what started it is not ended with it: a shell that called start_link, say" do
+    test = self()
+
+    # A process that does not trap exits, as a shell does not.
+    caller =
+      spawn(fn ->
+        {:ok, sup} = TimelessBeamAcct.start_link(options(name(), stop_after: 1))
+        send(test, {:started, sup})
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive {:started, sup}
+    ref = Process.monitor(sup)
+    assert_receive {:DOWN, ^ref, :process, ^sup, :normal}, 5_000
+
+    Process.sleep(100)
+    assert Process.alive?(caller)
+    Process.exit(caller, :kill)
   end
 
   test "a recording that is stopped says it was" do
@@ -125,7 +145,7 @@ defmodule TimelessBeamAcct.RecordingTest do
     assert TimelessBeamAcct.running?(name)
     assert %{recording: %{started: started}} = TimelessBeamAcct.status(name)
     assert started >= at
-    assert_receive {:DOWN, ^ref, :process, ^sup, :shutdown}, 5_000
+    assert_receive {:DOWN, ^ref, :process, ^sup, :normal}, 5_000
 
     assert [%{fields: %{"status" => "started"}}, %{fields: %{"status" => "ended"}}] =
              recorded(500)
