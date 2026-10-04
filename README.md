@@ -310,8 +310,23 @@ timeless_beam_acct_dashboard "/beam",
 ```
 
 The page is under `beam` in each: `/dashboard/beam`, `/beam/beam`.
-`mix timeless_beam_acct.install` does not add it yet; it is added by
-hand.
+
+**By the installer.** `mix timeless_beam_acct.install` (or `mix
+igniter.install timeless_beam_acct`) adds the page to the
+`live_dashboard` in the router, the one `mix phx.new` makes among them,
+and says where the planes are in `config.exs`. Run again, it adds
+nothing more. A dashboard whose `additional_pages` are not written out
+as a list, `additional_pages: pages()`, is left as it is, and the
+installer says what to add.
+
+**With timeless_phoenix.** Its dashboard has the page among its own, from
+timeless_phoenix 2.0.4: `TimelessPhoenix.dashboard_pages/1` includes it
+whenever this package is a dependency. Nothing is added to the router,
+and it does not matter which of the two installers runs first:
+timeless_phoenix's takes out the `live_dashboard` that `mix phx.new`
+made, and the page with it, and puts its own dashboard, with the page,
+in its place. Both orders were run against a new `mix phx.new`
+application, and the page was in the menu of each.
 
 #### Where the planes are
 

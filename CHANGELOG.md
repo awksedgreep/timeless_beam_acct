@@ -50,6 +50,12 @@
 - The page tells the node it records the application's
   `:max_recording`. A recording in another node could be made longer up
   to that node's own most, a day, past what the application allowed.
+- `mix timeless_beam_acct.install` adds the page to the `live_dashboard`
+  in the router, beside the pages it has, once however often it runs, and
+  says where the planes are for it. timeless_phoenix's dashboard is left
+  as it is: from timeless_phoenix 2.0.4 it has the page among its own.
+  Run in both orders with timeless_phoenix's installer against a new
+  `mix phx.new` application, the page was in the menu of each.
 - A recording whose node ended before it did is opened where what it
   wrote ends, and not at the time it was to stop, where there was
   nothing to see.

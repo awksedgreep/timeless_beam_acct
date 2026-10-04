@@ -28,7 +28,13 @@ if Code.ensure_loaded?(Igniter) do
     1. Adds `config :timeless_beam_acct, start: true, sink: ...` to
        `config.exs`
     2. Adds `config :timeless_beam_acct, start: false` to `test.exs`
-    3. Says what was turned on, and how to see that it is working
+    3. Adds the page of recordings ("TimelessAcct") to the
+       `live_dashboard` in the router, and says where the planes are for
+       it: `config :timeless_beam_acct, :dashboard, ...`. A router with
+       timeless_phoenix's dashboard is left as it is, since that has the
+       page among its own; a dashboard whose `additional_pages` are not
+       a list written out is left as it is, and what to add is said
+    4. Says what was turned on, and how to see that it is working
 
     What is there already is left as it is: an application that has said
     `start: false` has said so for a reason.
@@ -138,6 +144,7 @@ if Code.ensure_loaded?(Igniter) do
           )
           |> configure("test.exs", :start, false)
           |> Igniter.add_notice(notice(sink))
+          |> dashboard(urls)
 
         true ->
           igniter
@@ -146,7 +153,221 @@ if Code.ensure_loaded?(Igniter) do
           |> configure_urls(urls)
           |> configure("test.exs", :start, false)
           |> Igniter.add_notice(notice(sink))
+          |> dashboard(urls)
       end
+    end
+
+    ## The page in LiveDashboard
+
+    @page TimelessBeamAcct.Dashboard.Page
+    # As it is written in a router: the alias, not the atom.
+    @page_code {:__aliases__, [], [:TimelessBeamAcct, :Dashboard, :Page]}
+    @default_urls [
+      metrics_url: "http://127.0.0.1:8428",
+      logs_url: "http://127.0.0.1:9428",
+      traces_url: "http://127.0.0.1:10428"
+    ]
+
+    # The page of recordings, into the dashboard the router has: one of
+    # timeless_phoenix's, which has it already, or a `live_dashboard`,
+    # which is told of it. And where the planes are, which the page reads.
+    defp dashboard(igniter, urls) do
+      {igniter, found} = find_dashboard(igniter)
+
+      case found do
+        :no_router ->
+          igniter
+
+        :none ->
+          Igniter.add_notice(igniter, page_notice(:none))
+
+        {:live_dashboard, router} ->
+          {igniter, outcome} = add_to_live_dashboards(igniter, router)
+
+          igniter
+          |> configure_page(urls, outcome == :added)
+          |> Igniter.add_notice(page_notice(outcome))
+
+        found ->
+          igniter
+          |> configure_page(urls, true)
+          |> Igniter.add_notice(page_notice(found))
+      end
+    end
+
+    defp find_dashboard(igniter) do
+      with {igniter, router} when router != nil <- Igniter.Libs.Phoenix.select_router(igniter),
+           {:ok, {igniter, _source, zipper}} <-
+             Igniter.Project.Module.find_module(igniter, router) do
+        has? = fn name ->
+          match?({:ok, _}, Igniter.Code.Common.move_to(zipper, &call?(&1, name)))
+        end
+
+        cond do
+          has?.(:timeless_beam_acct_dashboard) -> {igniter, :own}
+          has?.(:timeless_phoenix_dashboard) -> {igniter, :timeless_phoenix}
+          has?.(:live_dashboard) -> {igniter, {:live_dashboard, router}}
+          true -> {igniter, :none}
+        end
+      else
+        {igniter, nil} -> {igniter, :no_router}
+        {:error, igniter} -> {igniter, :no_router}
+      end
+    end
+
+    defp call?(zipper, name), do: Igniter.Code.Function.function_call?(zipper, name, [1, 2])
+
+    # Each `live_dashboard` without the page is given it, among its
+    # `additional_pages`. One whose pages are not a list written out, as
+    # `additional_pages: pages()`, is not changed: what is in it is not
+    # known here.
+    defp add_to_live_dashboards(igniter, router) do
+      {:ok, {igniter, _source, zipper}} = Igniter.Project.Module.find_module(igniter, router)
+
+      dashboards =
+        zipper
+        |> Igniter.Code.Common.find_all(&call?(&1, :live_dashboard))
+        |> Enum.map(&state_of/1)
+
+      cond do
+        Enum.all?(dashboards, &(&1 == :has)) ->
+          {igniter, :already}
+
+        Enum.any?(dashboards, &(&1 == :opaque)) and not Enum.any?(dashboards, &(&1 == :add)) ->
+          {igniter, :opaque}
+
+        true ->
+          {:ok, igniter} =
+            Igniter.Project.Module.find_and_update_module(igniter, router, fn zipper ->
+              Igniter.Code.Common.update_all_matches(
+                zipper,
+                &(call?(&1, :live_dashboard) and state_of(&1) == :add),
+                &put_page/1
+              )
+            end)
+
+          {igniter, :added}
+      end
+    end
+
+    defp state_of(call) do
+      with {:ok, options} <- Igniter.Code.Function.move_to_nth_argument(call, 1) do
+        cond do
+          Igniter.Code.Keyword.keyword_has_path?(options, [:additional_pages, :beam]) ->
+            :has
+
+          match?({:ok, _}, Igniter.Code.Keyword.get_key(options, :additional_pages)) ->
+            {:ok, pages} = Igniter.Code.Keyword.get_key(options, :additional_pages)
+
+            if Igniter.Code.List.list?(
+                 Igniter.Code.Common.maybe_move_to_single_child_block(pages)
+               ),
+               do: :add,
+               else: :opaque
+
+          Igniter.Code.List.list?(Igniter.Code.Common.maybe_move_to_single_child_block(options)) ->
+            :add
+
+          true ->
+            :opaque
+        end
+      else
+        # `live_dashboard "/dashboard"`, with no options.
+        :error -> :add
+      end
+    end
+
+    defp put_page(call) do
+      case Igniter.Code.Function.move_to_nth_argument(call, 1) do
+        {:ok, _} ->
+          Igniter.Code.Function.update_nth_argument(call, 1, fn options ->
+            Igniter.Code.Keyword.put_in_keyword(options, [:additional_pages, :beam], @page_code)
+          end)
+
+        :error ->
+          Igniter.Code.Function.append_argument(call, additional_pages: [beam: @page_code])
+      end
+    end
+
+    # Where the planes are, for the page: where the collector writes, if
+    # that was said, and where the planes are unless told otherwise.
+    defp configure_page(igniter, _urls, false), do: igniter
+
+    defp configure_page(igniter, urls, true) do
+      Enum.reduce(@default_urls, igniter, fn {key, default}, igniter ->
+        Igniter.Project.Config.configure_new(
+          igniter,
+          "config.exs",
+          :timeless_beam_acct,
+          [:dashboard, key],
+          urls[key] || default
+        )
+      end)
+    end
+
+    defp page_notice(:added) do
+      """
+      The page of recordings is added to the LiveDashboard in the router,
+      as "TimelessAcct", among its additional_pages. It reads the planes
+      said in config :timeless_beam_acct, :dashboard (config/config.exs).
+
+      Anyone who can open the dashboard can record any node connected to
+      this one: the README has how to keep it to those who should
+      ("Securing it").
+      """
+    end
+
+    defp page_notice(:timeless_phoenix) do
+      """
+      The router has timeless_phoenix's dashboard, which has the page of
+      recordings ("TimelessAcct") among its own from timeless_phoenix
+      2.0.4. It reads the planes said in
+      config :timeless_beam_acct, :dashboard (config/config.exs).
+      """
+    end
+
+    defp page_notice(:own) do
+      """
+      The router has timeless_beam_acct_dashboard already, with the page of
+      recordings. Where the planes are is in
+      config :timeless_beam_acct, :dashboard (config/config.exs).
+      """
+    end
+
+    defp page_notice(:already) do
+      """
+      The LiveDashboard in the router has the page of recordings already.
+      Where the planes are is in
+      config :timeless_beam_acct, :dashboard (config/config.exs).
+      """
+    end
+
+    defp page_notice(:opaque) do
+      """
+      The LiveDashboard in the router has additional_pages that are not
+      written out as a list, so the page of recordings was not added. Add
+      it among them:
+
+          beam: #{inspect(@page)}
+
+      and say where the planes are:
+
+          config :timeless_beam_acct, :dashboard,
+            metrics_url: "http://127.0.0.1:8428",
+            logs_url: "http://127.0.0.1:9428",
+            traces_url: "http://127.0.0.1:10428"
+      """
+    end
+
+    defp page_notice(:none) do
+      """
+      No LiveDashboard was found in the router, so the page of recordings
+      was not added. In an application with phoenix_live_dashboard, it is one
+      of the dashboard's pages:
+
+          live_dashboard "/dashboard",
+            additional_pages: [beam: #{inspect(@page)}]
+      """
     end
 
     defp configure(igniter, file, key, value),

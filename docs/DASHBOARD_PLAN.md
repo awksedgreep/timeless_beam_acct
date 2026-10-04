@@ -306,7 +306,7 @@ Depends on nothing.
   with and without the two, so that neither breaks the other.
 - [x] **B2 — The router macro.** (S) As `timeless_traces_dashboard/2`
   (L7).
-- [ ] **B3 — The install task learns Phoenix.** (S) `mix
+- [x] **B3 — The install task learns Phoenix.** (S) `mix
   timeless_beam_acct.install` finds a router with `live_dashboard` in it
   and adds the page to it, and the configuration of the planes; in an
   application without one it does what it does now. It does not start a
@@ -369,7 +369,7 @@ Depends on A3, B1–B4, D4.
 - [ ] **E1 — The README**, with the page as it looks, and the three ways
   a recording is made: the page, `mix timeless_beam_acct.record`, and
   `stop_after` in code.
-- [ ] **E2 — `timeless_phoenix`.** (S) `dashboard_pages/1` has the fourth
+- [x] **E2 — `timeless_phoenix`.** (S) `dashboard_pages/1` has the fourth
   page (L8), when `timeless_beam_acct` is among the dependencies.
 - [ ] **E3 — A night.** (M) `bench/watch_node.exs`, recorded from the
   page for eight hours with nobody looking, against planes started for

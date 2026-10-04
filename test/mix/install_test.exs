@@ -222,6 +222,135 @@ defmodule Mix.Tasks.TimelessBeamAcct.InstallTest do
     assert content(igniter, "config/config.exs") == "import Config\n"
   end
 
+  describe "the page in LiveDashboard" do
+    defp router(body) do
+      files(
+        "import Config\n",
+        %{
+          "lib/demo_web/router.ex" => """
+          defmodule DemoWeb.Router do
+            use Phoenix.Router
+
+          #{body}
+          end
+          """
+        }
+      )
+    end
+
+    defp routed(igniter), do: content(igniter, "lib/demo_web/router.ex")
+    defp page_config(igniter), do: configured(igniter, "config/config.exs")[:dashboard]
+
+    # As `mix phx.new` writes it.
+    @generated """
+      if Application.compile_env(:demo, :dev_routes) do
+        import Phoenix.LiveDashboard.Router
+
+        scope "/dev" do
+          pipe_through :browser
+
+          live_dashboard "/dashboard", metrics: DemoWeb.Telemetry
+        end
+      end
+    """
+
+    test "is added to the dashboard mix phx.new makes, with where the planes are" do
+      igniter = install([], router(@generated))
+
+      assert igniter.issues == []
+
+      assert routed(igniter) =~
+               ~s|live_dashboard("/dashboard",\n|
+
+      assert routed(igniter) =~ "metrics: DemoWeb.Telemetry,"
+      assert routed(igniter) =~ "additional_pages: [beam: TimelessBeamAcct.Dashboard.Page]"
+
+      assert page_config(igniter) == [
+               metrics_url: "http://127.0.0.1:8428",
+               logs_url: "http://127.0.0.1:9428",
+               traces_url: "http://127.0.0.1:10428"
+             ]
+
+      assert Enum.any?(igniter.notices, &(&1 =~ "TimelessAcct"))
+      assert Enum.any?(igniter.notices, &(&1 =~ "Securing it"))
+    end
+
+    test "the planes the collector is told of are the page's" do
+      igniter = install(~w(--logs-url http://planes:9428), router(@generated))
+      assert page_config(igniter)[:logs_url] == "http://planes:9428"
+      assert page_config(igniter)[:metrics_url] == "http://127.0.0.1:8428"
+    end
+
+    test "is put beside the pages a dashboard has" do
+      igniter =
+        install(
+          [],
+          router(~s|  live_dashboard "/dashboard", additional_pages: [other: Demo.OtherPage]|)
+        )
+
+      assert routed(igniter) =~ "other: Demo.OtherPage"
+      assert routed(igniter) =~ "beam: TimelessBeamAcct.Dashboard.Page"
+    end
+
+    test "is given to a dashboard with no options" do
+      igniter = install([], router(~s|  live_dashboard "/dashboard"|))
+      assert routed(igniter) =~ "additional_pages: [beam: TimelessBeamAcct.Dashboard.Page]"
+    end
+
+    test "is added once, however often the installer runs" do
+      once = install([], router(@generated))
+
+      twice =
+        install(
+          [],
+          router(routed(once) |> String.split("\n") |> Enum.slice(3..-3//1) |> Enum.join("\n"))
+        )
+
+      assert length(Regex.scan(~r/TimelessBeamAcct.Dashboard.Page/, routed(twice))) == 1
+      assert Enum.any?(twice.notices, &(&1 =~ "has the page of recordings already"))
+    end
+
+    test "is not put among pages that are not written out" do
+      body = ~s|  live_dashboard "/dashboard", additional_pages: Demo.pages()|
+      igniter = install([], router(body))
+
+      assert routed(igniter) == router(body)["lib/demo_web/router.ex"]
+      assert page_config(igniter) == nil
+      assert Enum.any?(igniter.notices, &(&1 =~ ~r/not\s+written out as a list/))
+    end
+
+    test "timeless_phoenix's dashboard is left as it is, and the page is configured" do
+      body = """
+        import TimelessPhoenix.Router
+
+        scope "/" do
+          pipe_through :browser
+          timeless_phoenix_dashboard("/dashboard")
+        end
+      """
+
+      igniter = install([], router(body))
+
+      assert routed(igniter) == router(body)["lib/demo_web/router.ex"]
+      assert page_config(igniter)[:logs_url] == "http://127.0.0.1:9428"
+      assert Enum.any?(igniter.notices, &(&1 =~ "timeless_phoenix's dashboard"))
+    end
+
+    test "a router with no dashboard is left as it is, and says how" do
+      body = ~s|  scope "/" do\n    get "/", DemoWeb.PageController, :home\n  end|
+      igniter = install([], router(body))
+
+      assert routed(igniter) == router(body)["lib/demo_web/router.ex"]
+      assert page_config(igniter) == nil
+      assert Enum.any?(igniter.notices, &(&1 =~ "No LiveDashboard was found"))
+    end
+
+    test "an application with no router hears nothing of it" do
+      igniter = install([])
+      refute Enum.any?(igniter.notices, &(&1 =~ "LiveDashboard"))
+    end
+  end
+
   test "the installer is not among what is sent to a running node" do
     refute Install in TimelessBeamAcct.Remote.modules()
     refute Enum.any?(TimelessBeamAcct.Remote.modules(), &(Atom.to_string(&1) =~ "Igniter"))
