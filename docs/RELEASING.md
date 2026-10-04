@@ -79,19 +79,37 @@ given, or is to be looked at.
 
 ## 4. What a person will do first
 
-In a project made for it, from the repository as it is to be tagged:
+In projects made for it, from the repository as it is to be tagged. An
+`@github:` install takes what is pushed, so this is run after pushing
+and before tagging.
+
+**A plain application.** The installer starts nothing unless told
+`--always-on`, and then only outside the tests:
 
 ```sh
 mix new tried --sup && cd tried
 # add {:igniter, "~> 0.6", only: [:dev, :test]} to mix.exs
 mix deps.get
+mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --yes
+mix run -e 'IO.inspect(TimelessBeamAcct.running?())'              # false
 mix igniter.install timeless_beam_acct@github:awksedgreep/timeless_beam_acct --yes \
-  --metrics-url http://127.0.0.1:1 --logs-url http://127.0.0.1:1 --traces-url http://127.0.0.1:1
-mix run -e 'TimelessBeamAcct.tick(); TimelessBeamAcct.diagnostics()'
-MIX_ENV=test mix run -e 'IO.inspect(TimelessBeamAcct.running?())'
+  --always-on --metrics-url http://127.0.0.1:1 --logs-url http://127.0.0.1:1 --traces-url http://127.0.0.1:1
+mix run -e 'TimelessBeamAcct.tick(); TimelessBeamAcct.diagnostics()' # running
+MIX_ENV=test mix run -e 'IO.inspect(TimelessBeamAcct.running?())'  # false
 ```
 
-A collector is running in the first, and not in the second.
+**A Phoenix application, with timeless_phoenix from Hex.** Made by the
+newest `phx.new`; both installers, in either order; started with
+`--cookie` (a node started with `--sname` and no cookie writes
+`~/.erlang.cookie`) and a `PORT` of its own, the planes of section 2
+given as `--metrics-url` and the rest:
+
+- TimelessAcct is in the menu of `/dashboard`, after TimelessTraces, and
+  no collector is running (`TimelessBeamAcct.status/0` is `nil`).
+- With the planes stopped, the page says they do not answer, and Record
+  is disabled.
+- With them running, a recording of a minute is started from the page,
+  ends by itself, and is in the list as having run out of time, and opens.
 
 ## 5. The rest
 
