@@ -22,7 +22,10 @@ defmodule TimelessBeamAcct.Watch.RealPlanesTest do
   @moduletag timeout: 60_000
 
   # How long a plane is given to show what it answered for.
-  @within_ms 8_000
+  # VictoriaMetrics, as it is started unless told otherwise, does not
+  # answer for the last thirty seconds (`-search.latencyOffset`): what the
+  # collector read just now is asked for until then, and no longer.
+  @within_ms 45_000
 
   defp eventually(read, enough?, deadline \\ nil) do
     deadline = deadline || System.monotonic_time(:millisecond) + @within_ms
@@ -188,7 +191,12 @@ defmodule TimelessBeamAcct.Watch.RealPlanesTest do
     # The collector was told an hour between readings, and a step is that.
     assert watch.state.at <= last
 
-    watch = Watch.read_moment(%{watch | state: %{watch.state | at: last / 1}})
+    watch =
+      eventually(
+        fn -> Watch.read_moment(%{watch | state: %{watch.state | at: last / 1}}) end,
+        &(not Data.empty?(&1.snapshot))
+      )
+
     assert watch.detail.error == nil
     refute Data.empty?(watch.snapshot)
     {_watch, lines} = Watch.screen(watch, {120, 40})

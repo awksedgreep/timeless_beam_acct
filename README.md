@@ -84,7 +84,7 @@ iex> TimelessBeamAcct.trees(failed: true, limit: 1)
 
 ## Status
 
-Version 0.3.2. Collection, the sinks, putting a collector into a running
+Version 0.4.0. Collection, the sinks, putting a collector into a running
 node, the three views, recordings, `watch`, and the page in LiveDashboard
 work and are tested against a live VM, on OTP 27, 28 and 29, and on
 OTP 26 without exit accounting.
@@ -140,7 +140,7 @@ Or by hand:
 
 ```elixir
 # mix.exs
-{:timeless_beam_acct, "~> 0.3"}
+{:timeless_beam_acct, "~> 0.4"}
 ```
 
 ```elixir
@@ -314,7 +314,7 @@ recording ends.
 
 ```elixir
 # mix.exs
-{:timeless_beam_acct, "~> 0.3"}
+{:timeless_beam_acct, "~> 0.4"}
 ```
 
 Then one of three, in the router.
@@ -522,13 +522,18 @@ and the same URLs to the page, as `config :timeless_beam_acct, :dashboard`,
 or to `watch` and `recordings` as `--metrics-url` and the rest. It was
 run so against VictoriaMetrics 1.153, VictoriaLogs 1.53, and
 VictoriaTraces 0.12, and what a recording wrote was read back, every view
-of it, the same as from Timeless's planes. Three things differ:
+of it, the same as from Timeless's planes. Four things differ:
 
 - **A job of the last half minute is not there yet.** VictoriaTraces
   makes a trace findable some thirty seconds after it was written
   (`-insert.indexFlushInterval`), and a job's processes are read by its
   trace. Watched as it happens, the jobs are of a minute before; gone back
   to, they are all there.
+- **The last half minute is not there yet, either, gone back to.**
+  VictoriaMetrics does not answer for the last thirty seconds unless it
+  is started with a shorter `-search.latencyOffset` (`1s` will do). Now
+  is read from the collector, and is there; a moment of a few seconds
+  ago, gone back to, is empty until then.
 - **The Storage card is not shown.** It is of what Timeless's planes say
   they hold, and how small; Victoria's do not say it so.
 - **`check` says `answering: OK`**, which is what Victoria's `/health`

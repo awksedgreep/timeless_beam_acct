@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+What is recorded is read back from VictoriaMetrics, VictoriaLogs, and
+VictoriaTraces as from Timeless's planes: the page, `watch`, and
+`recordings` ask in PromQL, LogsQL, and Jaeger's API.
 
 - **VictoriaMetrics, VictoriaLogs, and VictoriaTraces serve as the
   planes.** The `:http` sink always wrote as they are written to; what
@@ -9,8 +13,10 @@
   records, and Jaeger's API for a trace, which Timeless's planes answer
   as well. Read back from both, every view the same. A job of the last
   half minute is not there on VictoriaTraces, which makes a trace
-  findable some thirty seconds after it is written, and the Storage card
-  is of Timeless's planes only.
+  findable some thirty seconds after it is written; VictoriaMetrics, as
+  it is started unless told otherwise, does not answer for the last
+  thirty seconds (`-search.latencyOffset`); and the Storage card is of
+  Timeless's planes only.
 - Over Timeless's planes the questions were measured against those they
   replace, and cost the same; the jobs cost less, 31 ms for what was
   266, since the processes of a trace are found among the records.
