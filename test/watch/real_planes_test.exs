@@ -101,7 +101,9 @@ defmodule TimelessBeamAcct.Watch.RealPlanesTest do
   end
 
   test "a moment is the node as the collector read it", context do
-    {{_first, last}, store} = Store.range(context.watch.store)
+    # A plane may make a sample findable a moment after it took it.
+    {{_first, last}, store} =
+      eventually(fn -> Store.range(context.watch.store) end, &match?({{_, _}, _}, &1))
 
     series =
       eventually(
@@ -149,10 +151,13 @@ defmodule TimelessBeamAcct.Watch.RealPlanesTest do
   test "the job it was part of is a tree", context do
     reach = %{until: System.os_time(:second) + 1.0, span: 900.0, limit: 200}
 
+    # VictoriaTraces makes a trace findable half a minute after it is
+    # written, and the trace is read by its id.
     assert {:ok, [job | _]} =
              eventually(
                fn -> Store.jobs(context.watch.store, reach, 100, &(&1.failed > 0)) end,
-               &match?({:ok, [_ | _]}, &1)
+               &match?({:ok, [_ | _]}, &1),
+               System.monotonic_time(:millisecond) + 60_000
              )
 
     assert job.processes == 2

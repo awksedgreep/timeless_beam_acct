@@ -145,4 +145,32 @@ defmodule TimelessBeamAcct.RealPlanes do
         []
     end
   end
+
+  @doc """
+  Why a test of what a Timeless plane stores is not run where the planes
+  named are not Timeless's, or `false` where they are, or are not named.
+  Such a test reads what was written by Timeless's own routes; the planes
+  of VictoriaMetrics, VictoriaLogs, and VictoriaTraces store it as well,
+  and are read as the watch reads them, in `test/watch/real_planes_test.exs`.
+  """
+  @spec not_timeless() :: String.t() | false
+  def not_timeless(env \\ System.get_env()) do
+    case sink_options(env) do
+      {:ok, options} ->
+        timeless =
+          with {:ok, 200, body} <-
+                 TimelessBeamAcct.Http.get(options[:metrics_url] <> "/health", [], 2_000),
+               {:ok, %{"build" => %{"name" => "timeless-" <> _}}} <- JSON.decode(body) do
+            true
+          else
+            _ -> false
+          end
+
+        not timeless &&
+          "the planes named are not Timeless's, and this reads by Timeless's own routes"
+
+      {:error, _why} ->
+        false
+    end
+  end
 end

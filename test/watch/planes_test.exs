@@ -7,13 +7,13 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
   @node "app@ohm"
 
   # A plane that answers each question with what it was told to, by the
-  # path that was asked for. The question is kept.
+  # path that was asked for. The question is kept, and is given to an
+  # answer, and to `asked/2`, as what it means: see `understood/2`.
   defp plane(answers) do
     plane = start_supervised!({TestPlane, []}, id: make_ref())
 
     TestPlane.answer(plane, fn request ->
-      %URI{path: path, query: query} = URI.parse(request.path)
-      asked = URI.decode_query(query || "")
+      {path, asked} = asked_of(request)
 
       case Enum.find_value(answers, fn {at, answer} -> if at == path, do: answer end) do
         nil -> {422, ~s({"error":"unsupported_capability","reason":"unsupported_route"})}
@@ -23,6 +23,107 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     end)
 
     plane
+  end
+
+  defp asked_of(request) do
+    %URI{path: path, query: query} = URI.parse(request.path)
+
+    form =
+      if request.method == "POST", do: URI.decode_query(request.body || ""), else: %{}
+
+    {path, understood(path, Map.merge(URI.decode_query(query || ""), form))}
+  end
+
+  # The PromQL and LogsQL the store writes, read back: what metric, of
+  # which labels, over what stretch; which records, in what order, how
+  # many. The query itself is kept as `"query"`.
+  defp understood("/select/logsql/query", %{"query" => query} = asked) do
+    [_, from, to] = Regex.run(~r/_time:\[([^,]+), ([^\]]+)\]/, query)
+
+    fields =
+      for [_, field, value] <- Regex.scan(~r/(\w+):="((?:[^"\\]|\\.)*)"/, query),
+          into: %{},
+          do: {field, String.replace(value, ~S(\"), ~S("))}
+
+    order =
+      cond do
+        query =~ "sort by (_time desc)" -> %{"order" => "desc"}
+        query =~ "sort by (_time)" -> %{"order" => "asc"}
+        true -> %{}
+      end
+
+    pipes =
+      for [_, pipe, n] <- Regex.scan(~r/\| (offset|limit) (\d+)/, query), into: %{}, do: {pipe, n}
+
+    asked
+    |> Map.merge(fields)
+    |> Map.merge(order)
+    |> Map.merge(%{"offset" => "0"})
+    |> Map.merge(pipes)
+    |> Map.merge(%{"start" => unix(from), "end" => unix(to)})
+  end
+
+  defp understood(path, %{"query" => query} = asked)
+       when path in ["/api/v1/query", "/api/v1/query_range"] do
+    selector = ~S|(\w+)\{(.*)\}\[(\d+)s\]|
+
+    shape =
+      cond do
+        match = Regex.run(~r/^(\w+)\((\w+_over_time)\(#{selector}\)\)$/, query) ->
+          [_, outer, over, metric, labels, window] = match
+          {metric, labels, %{"fn" => outer, "over" => over, "window" => window}}
+
+        match = Regex.run(~r/^(\w+_over_time)\(#{selector}\)$/, query) ->
+          [_, over, metric, labels, window] = match
+          {metric, labels, %{"over" => over, "window" => window}}
+
+        match = Regex.run(~r/^#{selector}$/, query) ->
+          # A range selector, asked at a moment: the samples since.
+          [_, metric, labels, seconds] = match
+          time = String.to_integer(asked["time"])
+          start = time - String.to_integer(seconds) + 1
+          {metric, labels, %{"seconds" => seconds, "end" => "#{time}", "start" => "#{start}"}}
+
+        true ->
+          nil
+      end
+
+    case shape do
+      {metric, labels, shape} ->
+        labels =
+          for [_, key, value] <- Regex.scan(~r/(\w+)="((?:[^"\\]|\\.)*)"/, labels),
+              into: %{},
+              do: {key, value}
+
+        asked |> Map.merge(labels) |> Map.merge(shape) |> Map.put("metric", metric)
+
+      nil ->
+        asked
+    end
+  end
+
+  defp understood(_path, asked), do: asked
+
+  defp unix(iso) do
+    {:ok, moment, _} = DateTime.from_iso8601(iso)
+    "#{DateTime.to_unix(moment)}"
+  end
+
+  # Series as a plane answers PromQL: `{labels, [{seconds, value}]}`.
+  defp matrix(series) do
+    %{
+      "status" => "success",
+      "data" => %{
+        "resultType" => "matrix",
+        "result" =>
+          for {labels, points} <- series do
+            %{
+              "metric" => labels,
+              "values" => for({at, value} <- points, do: [at, to_string(value)])
+            }
+          end
+      }
+    }
   end
 
   defp answered({status, body}), do: {status, body}
@@ -38,11 +139,11 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     store
   end
 
-  # What was asked of a path, as its parameters.
+  # What was asked of a path, as what it means.
   defp asked(plane, path) do
     for request <- TestPlane.requests(plane),
-        %URI{path: ^path, query: query} <- [URI.parse(request.path)],
-        do: URI.decode_query(query || "")
+        {^path, asked} <- [asked_of(request)],
+        do: asked
   end
 
   defp lines(rows), do: Enum.map_join(rows, "\n", &JSON.encode!/1)
@@ -116,7 +217,7 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
       {:ok, store} = Planes.new(metrics_url: TestPlane.url(plane))
 
       assert {:ok, %Planes{node: @node}} = Planes.reach(store)
-      assert [%{"metric" => "beam_vm_processes"}] = asked(plane, "/api/v1/label/node/values")
+      assert [%{"match[]" => "beam_vm_processes"}] = asked(plane, "/api/v1/label/node/values")
 
       assert {:ok, %Planes{node: "other@ohm"}} = Planes.reach(%{store | node: "other@ohm"})
     end
@@ -193,26 +294,40 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
       plane =
         plane([
           {"/api/v1/query",
-           %{"labels" => %{"node" => @node}, "timestamp" => 5000, "value" => 512.0}},
+           fn
+             # The last five minutes, for the last sample.
+             %{"seconds" => "300"} ->
+               matrix([{%{"node" => @node}, [{4990, 511}, {5000, 512}]}])
+
+             # The part the first sample is in.
+             %{"seconds" => _} ->
+               matrix([{%{"node" => @node}, [{1000, 510}, {1010, 511}]}])
+           end},
           {"/select/metrics/stats", %{"oldest_timestamp_seconds" => 10}},
-          {"/api/v1/query_range", %{"series" => [%{"data" => [[60, 0], [960, 3], [1020, 6]]}]}},
-          {"/api/v1/export",
-           lines([%{"timestamps" => [1_000_000, 1_010_000], "values" => [510.0, 511.0]}])}
+          # Parts of a minute, each stamped at its end.
+          {"/api/v1/query_range", matrix([{%{}, [{60, 0}, {1020, 3}, {1080, 6}]}])}
         ])
 
       store = store(plane, host: "ohm")
       assert {{1000.0, 5000.0}, store} = Store.range(store)
 
       # Of this node on this host, and no other.
-      assert [%{"metric" => "beam_vm_processes", "node" => @node, "host" => "ohm"}] =
+      assert [%{"metric" => "beam_vm_processes", "node" => @node, "host" => "ohm"} | _] =
                asked(plane, "/api/v1/query")
 
-      assert [%{"aggregate" => "count", "start" => start, "end" => "5000", "step" => "60"}] =
-               asked(plane, "/api/v1/query_range")
+      assert [
+               %{
+                 "over" => "count_over_time",
+                 "window" => "60",
+                 "start" => "10",
+                 "step" => "60",
+                 "end" => "5060"
+               }
+             ] = asked(plane, "/api/v1/query_range")
 
-      assert String.to_integer(start) < 10
-      # The part of the stretch the first sample is in is what is read.
-      assert [%{"start" => "960", "end" => "1020"}] = asked(plane, "/api/v1/export")
+      # The part of the stretch the first sample is in is what is read, and
+      # the step before it.
+      assert [_last, %{"start" => "900", "end" => "1020"}] = asked(plane, "/api/v1/query")
 
       # The first is not looked for again while it is fresh.
       TestPlane.clear(plane)
@@ -232,18 +347,49 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
       plane =
         plane([
           {"/api/v1/query",
-           %{
-             "data" => [
-               %{"timestamp" => 4000, "value" => 1.0},
-               %{"timestamp" => 4500, "value" => 1.0}
-             ]
-           }},
+           matrix([{%{"host" => "a"}, [{3990, 1}, {4000, 1}]}, {%{"host" => "b"}, [{4500, 1}]}])},
           {"/select/metrics/stats", {500, "no"}},
           {"/api/v1/query_range", {500, "no"}}
         ])
 
-      # Where the first cannot be found out, there is the last.
+      # Where nothing could be counted, the first is of the last hour, read
+      # as it is: the earliest of the samples answered.
+      assert {{3990.0, 4500.0}, _store} = Store.range(store(plane))
+    end
+
+    test "are the last, where there is not even the last hour to read" do
+      plane =
+        plane([
+          {"/api/v1/query",
+           fn
+             %{"seconds" => "300"} -> matrix([{%{}, [{4500, 1}]}])
+             _ -> {500, "no"}
+           end},
+          {"/api/v1/query_range", {500, "no"}}
+        ])
+
       assert {{4500.0, 4500.0}, _store} = Store.range(store(plane))
+    end
+
+    test "are found in the last hour that has any, of a node quiet for longer" do
+      plane =
+        plane([
+          {"/api/v1/query",
+           fn
+             %{"seconds" => "300"} -> matrix([])
+             %{"seconds" => "3600", "end" => "7200"} -> matrix([{%{}, [{6000, 1}, {6010, 2}]}])
+           end},
+          {"/api/v1/query_range",
+           fn
+             %{"window" => "3600", "step" => "3600"} ->
+               matrix([{%{}, [{3600, 360}, {7200, 120}]}])
+
+             _ ->
+               {500, "no"}
+           end}
+        ])
+
+      assert {{6010.0, 6010.0}, _store} = Store.range(store(plane))
     end
   end
 
@@ -333,10 +479,7 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     test "is its samples, in order" do
       plane =
         plane([
-          {"/api/v1/export",
-           lines([
-             %{"timestamps" => [110_000, 100_000, 120_000], "values" => [2.0, 1.0, nil]}
-           ])}
+          {"/api/v1/query", matrix([{%{}, [{110, 2.0}, {100, 1.0}, {120, "NaN"}]}])}
         ])
 
       store = store(plane)
@@ -345,8 +488,9 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
                [{100.0, 1.0}, {110.0, 2.0}]
 
       assert [%{"metric" => "beam_group_work_pct", "group" => "A", "node" => @node} = asked] =
-               asked(plane, "/api/v1/export")
+               asked(plane, "/api/v1/query")
 
+      # The samples since the second the stretch begins in.
       assert %{"start" => "90", "end" => "121"} = asked
 
       TestPlane.stop_listening(plane)
@@ -354,18 +498,11 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     end
 
     test "says how far apart the samples are" do
-      every = fn seconds ->
-        lines([
-          %{
-            "timestamps" => for(n <- 0..9, do: (1000 + n * seconds) * 1000),
-            "values" => List.duplicate(1.0, 10)
-          }
-        ])
-      end
+      every = fn seconds -> matrix([{%{}, for(n <- 0..9, do: {1000 + n * seconds, 1.0})}]) end
 
       plane =
         plane([
-          {"/api/v1/export",
+          {"/api/v1/query",
            fn
              %{"metric" => "beam_vm_processes"} -> every.(10)
              %{"metric" => "beam_acct_processes"} -> every.(30)
@@ -373,7 +510,7 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
         ])
 
       assert Store.spacing(store(plane), 2000.0) == {10.0, 30.0}
-      assert Store.spacing(store(plane([{"/api/v1/export", ""}])), 2000.0) == {nil, nil}
+      assert Store.spacing(store(plane([{"/api/v1/query", matrix([])}])), 2000.0) == {nil, nil}
     end
   end
 
@@ -381,15 +518,16 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     test "of hours is the samples, and of days what is highest in each part of them" do
       plane =
         plane([
-          {"/api/v1/export",
+          {"/api/v1/query",
            fn
              %{"metric" => "beam_vm_scheduler_util_pct"} ->
-               lines([%{"timestamps" => [1_000_000, 1_010_000], "values" => [5.0, 7.0]}])
+               matrix([{%{}, [{1000, 5.0}, {1010, 7.0}]}])
 
              _ ->
-               ""
+               matrix([])
            end},
-          {"/api/v1/query_range", %{"series" => [%{"data" => [[600, 40.0], [900, 60.5]]}]}}
+          # Each part stamped at its end.
+          {"/api/v1/query_range", matrix([{%{}, [{900, 40.0}, {1200, 60.5}]}])}
         ])
 
       store = store(plane)
@@ -398,8 +536,18 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
 
       assert Store.timeline(store, 0.0, 6 * 3600.0) == {[{600.0, 40.0}, {900.0, 60.5}], 300.0}
 
-      assert [%{"scheduler" => "all", "step" => "300", "aggregate" => "max", "node" => @node}] =
-               asked(plane, "/api/v1/query_range")
+      # The highest of each part: of each series, and of them all.
+      assert [
+               %{
+                 "metric" => "beam_vm_scheduler_util_pct",
+                 "scheduler" => "all",
+                 "node" => @node,
+                 "fn" => "max",
+                 "over" => "max_over_time",
+                 "window" => "300",
+                 "step" => "300"
+               }
+             ] = asked(plane, "/api/v1/query_range")
 
       assert {_points, 3600.0} = Store.timeline(store, 0.0, 7 * 86_400.0)
     end
@@ -407,11 +555,8 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     test "of days is the samples, of a store too young to have more" do
       plane =
         plane([
-          {"/api/v1/export",
-           lines([
-             %{"timestamps" => [1_000_000, 1_010_000, 1_020_000], "values" => [5.0, 7.0, 6.0]}
-           ])},
-          {"/api/v1/query_range", %{"series" => []}}
+          {"/api/v1/query", matrix([{%{}, [{1000, 5.0}, {1010, 7.0}, {1020, 6.0}]}])},
+          {"/api/v1/query_range", matrix([])}
         ])
 
       assert {[{1000.0, 5.0}, _, _], 10.0} = Store.timeline(store(plane), 0.0, 6 * 3600.0)
@@ -615,8 +760,8 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
     test "of a long stretch is the highest of each part, of a short one the samples" do
       plane =
         plane([
-          {"/api/v1/query_range", %{"series" => [%{"data" => [[600, 4.0], [900, 7.5]]}]}},
-          {"/api/v1/export", lines([%{"timestamps" => [1_000_000], "values" => [3.0]}])}
+          {"/api/v1/query_range", matrix([{%{}, [{900, 4.0}, {1200, 7.5}]}])},
+          {"/api/v1/query", matrix([{%{}, [{1000, 3.0}]}])}
         ])
 
       store = store(plane)
@@ -624,7 +769,7 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
       assert Store.trend(store, "beam_vm_run_queue", [], 0.0, 6 * 3600.0) ==
                {[{600.0, 4.0}, {900.0, 7.5}], 300.0}
 
-      assert [%{"metric" => "beam_vm_run_queue", "aggregate" => "max", "step" => "300"}] =
+      assert [%{"metric" => "beam_vm_run_queue", "fn" => "max", "step" => "300"}] =
                asked(plane, "/api/v1/query_range")
 
       assert {[{1000.0, 3.0}], _} = Store.trend(store, "beam_vm_run_queue", [], 0.0, 3600.0)
@@ -632,7 +777,7 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
       assert {[{1000.0, 3.0}], _} =
                Store.trend(store, "beam_vm_scheduler_util_pct", [scheduler: "all"], 0.0, 3600.0)
 
-      assert Enum.any?(asked(plane, "/api/v1/export"), &(&1["scheduler"] == "all"))
+      assert Enum.any?(asked(plane, "/api/v1/query"), &(&1["scheduler"] == "all"))
     end
   end
 
@@ -713,52 +858,114 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
   end
 
   describe "jobs" do
+    # A trace as Jaeger says it, of spans as `span/6` makes them.
+    defp jaeger(spans) do
+      %{
+        "data" => [
+          %{
+            "spans" =>
+              for span <- spans do
+                status = %{"ok" => "OK", "error" => "ERROR"}[span["status"]]
+
+                %{
+                  "traceID" => span["trace_id"],
+                  "spanID" => span["span_id"],
+                  "operationName" => span["name"],
+                  "references" => references(span),
+                  "startTime" => div(span["start_time"], 1000),
+                  "duration" => div(span["duration_ns"], 1000),
+                  "processID" => "p1",
+                  "tags" => tags(span, status)
+                }
+              end,
+            "processes" => %{
+              "p1" => %{
+                "serviceName" => "my_app",
+                "tags" => [
+                  %{"key" => "service.instance.id", "type" => "string", "value" => @node}
+                ]
+              }
+            }
+          }
+        ]
+      }
+    end
+
+    defp references(%{"parent_span_id" => nil}), do: []
+
+    defp references(span) do
+      [
+        %{
+          "refType" => "CHILD_OF",
+          "traceID" => span["trace_id"],
+          "spanID" => span["parent_span_id"]
+        }
+      ]
+    end
+
+    defp tags(span, status) do
+      attributes =
+        for {key, value} <- span["attributes"],
+            do: %{"key" => key, "type" => "int64", "value" => value}
+
+      [
+        %{"key" => "otel.status_code", "type" => "string", "value" => status},
+        %{
+          "key" => "otel.status_description",
+          "type" => "string",
+          "value" => span["status_message"]
+        }
+        | attributes
+      ]
+    end
+
+    # The record of a process that ended, of a trace.
+    defp ended(trace, started, more \\ %{}) do
+      record(
+        started + 1,
+        Map.merge(%{"trace_id" => String.duplicate(trace, 16), "started" => started / 1}, more)
+      )
+    end
+
     test "are the traces of more than one process, each read in full" do
       plane =
         plane([
-          {"/select/timeless/api/spans",
+          {"/select/logsql/query",
            fn
              %{"offset" => "0"} ->
-               %{
-                 "entries" => [
-                   span("aa", "02", "01", "MyApp.Worker", 102),
-                   span("aa", "03", "01", "MyApp.Worker", 103),
-                   # A trace of one process, and not a job.
-                   span("bb", "04", nil, "MyApp.Session", 104),
-                   span("cc", "06", "05", "fn in MyApp.Report.build/2", 111),
-                   span("cc", "05", nil, "MyApp.Report.build/2", 110),
-                   # Of another node.
-                   span("dd", "07", nil, "X", 120, %{
-                     "resource" => %{"service.instance.id" => "o@x"}
-                   }),
-                   span("dd", "08", "07", "X", 121, %{
-                     "resource" => %{"service.instance.id" => "o@x"}
-                   })
-                 ]
-               }
+               lines([
+                 ended("aa", 102),
+                 ended("aa", 103),
+                 # A trace of one process, and not a job.
+                 ended("bb", 104),
+                 ended("cc", 111),
+                 ended("cc", 110),
+                 # Of another node.
+                 ended("dd", 120, %{"node" => "o@x"}),
+                 ended("dd", 121, %{"node" => "o@x"}),
+                 # What the VM remarked on is not a process.
+                 record(130.0, %{"kind" => "long_gc", "trace_id" => String.duplicate("ee", 16)}),
+                 record(131.0, %{"kind" => "long_gc", "trace_id" => String.duplicate("ee", 16)})
+               ])
 
              _ ->
-               %{"entries" => []}
+               ""
            end},
-          {"/select/timeless/api/traces/" <> String.duplicate("aa", 16),
-           %{
-             "spans" => [
-               # Its root was not among the last spans, and is among its own.
-               span("aa", "01", nil, "MyApp.Batch", 100, %{"duration_ns" => 5_000_000_000}),
-               span("aa", "02", "01", "MyApp.Worker", 102),
-               span("aa", "03", "01", "MyApp.Worker", 103, %{
-                 "status" => "error",
-                 "status_message" => "crashed: RuntimeError"
-               })
-             ]
-           }},
-          {"/select/timeless/api/traces/" <> String.duplicate("cc", 16),
-           %{
-             "spans" => [
-               span("cc", "05", nil, "MyApp.Report.build/2", 110),
-               span("cc", "06", "05", "fn in MyApp.Report.build/2", 111)
-             ]
-           }}
+          {"/select/jaeger/api/traces/" <> String.duplicate("aa", 16),
+           jaeger([
+             # Its root was not among the last records, and is among its own.
+             span("aa", "01", nil, "MyApp.Batch", 100, %{"duration_ns" => 5_000_000_000}),
+             span("aa", "02", "01", "MyApp.Worker", 102),
+             span("aa", "03", "01", "MyApp.Worker", 103, %{
+               "status" => "error",
+               "status_message" => "crashed: RuntimeError"
+             })
+           ])},
+          {"/select/jaeger/api/traces/" <> String.duplicate("cc", 16),
+           jaeger([
+             span("cc", "05", nil, "MyApp.Report.build/2", 110),
+             span("cc", "06", "05", "fn in MyApp.Report.build/2", 111)
+           ])}
         ])
 
       store = store(plane)
@@ -782,15 +989,45 @@ defmodule TimelessBeamAcct.Watch.PlanesTest do
                "└─ MyApp.Worker  2.0s, 500 reductions  [crashed: RuntimeError]"
              ]
 
-      assert %{"until" => "200000000000", "order" => "desc", "limit" => "100"} =
-               hd(asked(plane, "/select/timeless/api/spans"))
+      # The latest records, a page at a time, of every kind: a kind is
+      # chosen as they are read.
+      # (The pages are asked for together, and arrive in any order.)
+      first = Enum.find(asked(plane, "/select/logsql/query"), &(&1["offset"] == "0"))
+      assert %{"end" => "200", "order" => "desc", "limit" => "100"} = first
+
+      refute Map.has_key?(first, "kind")
 
       # What is wanted is chosen among them.
       assert {:ok, [%{name: "MyApp.Batch"}]} = Store.jobs(store, reach, 80, &(&1.failed > 0))
     end
 
+    test "are looked for further back, where their traces are not found yet" do
+      # A plane that makes a trace findable only some time after it is
+      # written: the last minute's are not found.
+      plane =
+        plane([
+          {"/select/logsql/query",
+           fn
+             %{"offset" => "0", "end" => "200"} -> lines([ended("aa", 190), ended("aa", 191)])
+             %{"offset" => "0", "end" => "140"} -> lines([ended("cc", 130), ended("cc", 131)])
+             _ -> ""
+           end},
+          {"/select/jaeger/api/traces/" <> String.duplicate("aa", 16), {404, ~s({"data":[]})}},
+          {"/select/jaeger/api/traces/" <> String.duplicate("cc", 16),
+           jaeger([
+             span("cc", "05", nil, "MyApp.Report.build/2", 130),
+             span("cc", "06", "05", "fn in MyApp.Report.build/2", 131)
+           ])}
+        ])
+
+      assert {:ok, [%{name: "MyApp.Report.build/2", started: 130.0}]} =
+               Store.jobs(store(plane), %{until: 200.0, span: 900.0, limit: 10}, 80, fn _ ->
+                 true
+               end)
+    end
+
     test "say why they could not be read" do
-      plane = plane([{"/select/timeless/api/spans", {500, ~s({"error":"internal"})}}])
+      plane = plane([{"/select/logsql/query", {500, ~s({"error":"internal"})}}])
 
       assert {:error, why} =
                Store.jobs(store(plane), %{until: 9.0, span: 5.0, limit: 3}, 80, fn _ -> true end)

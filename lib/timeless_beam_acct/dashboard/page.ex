@@ -147,7 +147,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
       {:noreply,
        assign(socket,
          said:
-           "It could not be started: the Timeless planes are not answering, and a " <>
+           "It could not be started: the planes are not answering, and a " <>
              "recording is written to them."
        )}
     end
@@ -246,7 +246,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
         case planes() do
           nil ->
             {[],
-             "Where the Timeless planes are is not configured. A recording is written to " <>
+             "Where the planes are is not configured. A recording is written to " <>
                "them and read from them: config :timeless_beam_acct, :dashboard, " <>
                "metrics_url: ..., logs_url: ..., traces_url: ..."}
 
@@ -260,7 +260,7 @@ if Code.ensure_loaded?(Phoenix.LiveDashboard.PageBuilder) do
 
               {:error, why} ->
                 {[],
-                 "The Timeless planes are not answering (#{why}). A recording is written to " <>
+                 "The planes are not answering (#{why}). A recording is written to " <>
                    "them and read from them, so none can be started until they answer. " <>
                    "Where they are is in config :timeless_beam_acct, :dashboard."}
             end

@@ -1,10 +1,26 @@
 defmodule TimelessBeamAcct.Watch.Planes do
   @moduledoc """
-  The Timeless planes, read over HTTP: what a collector with the `:http`
-  sink has written, for as long as the planes were told to keep it.
+  The planes, read over HTTP: what a collector with the `:http` sink has
+  written, for as long as the planes were told to keep it. Timeless's
+  planes, or VictoriaMetrics, VictoriaLogs, and VictoriaTraces: what is
+  asked is asked as either answers it.
 
   Each question is one request, or a few, and the planes do the looking:
   a moment is every series of the node as of that moment, in one answer.
+
+  | plane | asked in |
+  |---|---|
+  | metrics | PromQL: `/api/v1/query`, `/api/v1/query_range`, and the values of the `node` label |
+  | logs | LogsQL, by POST to `/select/logsql/query`, with the time in the query |
+  | traces | Jaeger's: `/select/jaeger/api/traces/<id>`, a trace at a time |
+
+  The jobs are found among the records: every process that ended is a
+  record with the trace it was of, and a trace with more than one is a
+  job. VictoriaTraces makes a trace findable half a minute after it is
+  written; one that is not found yet is looked for a minute further back.
+
+  What the planes hold, and how small (`storage/1`), is of Timeless's
+  planes, which count it; of others, nothing is said.
 
   ## Options
 
@@ -143,7 +159,7 @@ defmodule TimelessBeamAcct.Watch.Planes do
   end
 
   defp nodes(store) do
-    case get(store, :metrics, "/api/v1/label/node/values", metric: "beam_vm_processes") do
+    case get(store, :metrics, "/api/v1/label/node/values", "match[]": "beam_vm_processes") do
       {:ok, body} ->
         case JSON.decode(body) do
           {:ok, %{"data" => nodes}} when is_list(nodes) -> {:ok, nodes}
@@ -159,20 +175,7 @@ defmodule TimelessBeamAcct.Watch.Planes do
 
   @impl true
   def range(%__MODULE__{} = store) do
-    last =
-      with {:ok, body} <-
-             get(store, :metrics, "/api/v1/query", [metric: "beam_vm_processes"] ++ who(store)),
-           {:ok, answer} <- JSON.decode(body) do
-        answer
-        |> latest()
-        |> Enum.map(& &1["timestamp"])
-        |> Enum.filter(&is_number/1)
-        |> Enum.max(fn -> nil end)
-      else
-        _ -> nil
-      end
-
-    case last do
+    case last(store) do
       nil ->
         {nil, store}
 
@@ -183,9 +186,45 @@ defmodule TimelessBeamAcct.Watch.Planes do
     end
   end
 
-  defp latest(%{"data" => series}) when is_list(series), do: series
-  defp latest(%{"timestamp" => _} = one), do: [one]
-  defp latest(_answer), do: []
+  # The last sample of the node: looked for in the last five minutes, its
+  # own time read from the raw samples, and if there is none there, the
+  # last hour of the last week that has one is found and looked in.
+  # (`timestamp()` would say it in one question, but not every plane says
+  # the sample's time by it: one says the time it was asked at.)
+  defp last(store) do
+    now = TimelessBeamAcct.Clock.now()
+
+    case latest_in(store, now, 300) do
+      nil ->
+        hours =
+          promql_range(
+            store,
+            "count_over_time(#{selector(store, "beam_vm_processes")}[3600s])",
+            now - 7 * 86_400,
+            now,
+            3600
+          )
+
+        case hours
+             |> Enum.flat_map(& &1.values)
+             |> Enum.map(&elem(&1, 0))
+             |> Enum.max(fn -> nil end) do
+          nil -> nil
+          hour -> latest_in(store, hour, 3600)
+        end
+
+      found ->
+        found
+    end
+  end
+
+  defp latest_in(store, at, seconds) do
+    store
+    |> samples_until(selector(store, "beam_vm_processes"), at, seconds)
+    |> Enum.flat_map(& &1.values)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.max(fn -> nil end)
+  end
 
   # The first moment: the stretch the plane holds is counted in a
   # thousand parts, and the first part with a sample in it is read.
@@ -204,34 +243,38 @@ defmodule TimelessBeamAcct.Watch.Planes do
 
     step = max(div(trunc(last - oldest), 1000), 60)
 
+    # Each part counted is stamped at its end, and counts what is in the
+    # step before it.
     counted =
-      get(
+      promql_range(
         store,
-        :metrics,
-        "/api/v1/query_range",
-        [
-          metric: "beam_vm_processes",
-          start: oldest - step,
-          end: last,
-          step: step,
-          aggregate: "count"
-        ] ++
-          who(store)
+        "count_over_time(#{selector(store, "beam_vm_processes")}[#{step}s])",
+        oldest,
+        last,
+        step
       )
 
     first =
-      with {:ok, body} <- counted,
-           {:ok, %{"series" => series}} <- JSON.decode(body),
-           [bucket | _] <-
-             series
-             |> Enum.flat_map(&(&1["data"] || []))
-             |> Enum.filter(&match?([_, count] when count > 0, &1))
-             |> Enum.map(&hd/1)
+      with [ending | _] <-
+             counted
+             |> Enum.flat_map(& &1.values)
+             |> Enum.filter(fn {_at, count} -> count > 0 end)
+             |> Enum.map(&elem(&1, 0))
              |> Enum.sort(),
-           [{at, _} | _] <- history(store, "beam_vm_processes", nil, nil, bucket, bucket + step) do
+           # A step further back than the part: where its edge falls is the
+           # plane's to say, and the first sample may be just before it.
+           [{at, _} | _] <-
+             history(store, "beam_vm_processes", nil, nil, ending - 2 * step, ending) do
         at
       else
-        _ -> last / 1
+        # Nothing counted: a store younger than a step, whose last part a
+        # plane that keeps to multiples of the step, and to now, will not
+        # evaluate. Its last hour is read as it is.
+        _ ->
+          case history(store, "beam_vm_processes", nil, nil, last - 3600, last) do
+            [{at, _} | _] -> at
+            [] -> last / 1
+          end
       end
 
     %{store | first: {first, trunc(last)}}
@@ -300,35 +343,15 @@ defmodule TimelessBeamAcct.Watch.Planes do
 
   @impl true
   def history(%__MODULE__{} = store, metric, key, want, from, to) do
-    label = if key, do: [{key, want}], else: []
+    labels = if key, do: [{key, want}], else: []
+    to = Float.ceil(to / 1)
+    seconds = trunc(to - Float.floor(from / 1)) + 1
 
-    asked =
-      get(
-        store,
-        :metrics,
-        "/api/v1/export",
-        [metric: metric, start: trunc(Float.floor(from / 1)), end: trunc(Float.ceil(to / 1))] ++
-          label ++ who(store)
-      )
-
-    case asked do
-      {:ok, body} ->
-        body
-        |> lines()
-        |> Enum.flat_map(fn
-          %{"timestamps" => stamps, "values" => values} ->
-            for {ms, value} <- Enum.zip(stamps, values),
-                is_number(value),
-                do: {ms / 1000, value / 1}
-
-          _ ->
-            []
-        end)
-        |> Enum.sort()
-
-      {:error, _} ->
-        []
-    end
+    store
+    |> samples_until(selector(store, metric, labels), to, seconds)
+    |> Enum.flat_map(& &1.values)
+    |> Enum.filter(fn {at, _value} -> at >= from end)
+    |> Enum.sort()
   end
 
   @impl true
@@ -359,23 +382,17 @@ defmodule TimelessBeamAcct.Watch.Planes do
 
     ranged =
       if resolution > 0 do
-        asked =
-          get(
-            store,
-            :metrics,
-            "/api/v1/query_range",
-            [metric: metric] ++
-              labels ++
-              [start: trunc(from), end: trunc(Float.ceil(to / 1)), step: resolution] ++
-              [aggregate: "max"] ++ who(store)
-          )
-
-        with {:ok, body} <- asked,
-             {:ok, %{"series" => [%{"data" => [_ | _] = points} | _]}} <- JSON.decode(body) do
-          for [at, value] <- points, is_number(value), do: {at / 1, value / 1}
-        else
-          _ -> []
-        end
+        # A part is stamped at its end, and is of the step before it: it is
+        # said here at its beginning, as a column of a timeline is.
+        store
+        |> promql_range(
+          "max(max_over_time(#{selector(store, metric, labels)}[#{resolution}s]))",
+          from + resolution,
+          Float.ceil(to / 1),
+          resolution
+        )
+        |> Enum.flat_map(& &1.values)
+        |> Enum.map(fn {at, value} -> {at - resolution, value} end)
       else
         []
       end
@@ -401,7 +418,9 @@ defmodule TimelessBeamAcct.Watch.Planes do
     {found, probes} =
       Enum.reduce([{"error", true}, {"warning", false}], {[], []}, fn {level, error},
                                                                       {found, probes} ->
-        rows = records(store, [level: level, limit: store.most_incidents], from, to)
+        # The latest first: what is not reached is what lies further back.
+        rows =
+          records(store, [level: level, limit: store.most_incidents, order: "desc"], from, to)
 
         incidents =
           for row <- rows,
@@ -573,11 +592,9 @@ defmodule TimelessBeamAcct.Watch.Planes do
   def recordings(%__MODULE__{} = store, from, to) do
     # Of every node: a recording is found by when it began, whoever it was of.
     asked =
-      get(
-        store,
-        :logs,
-        "/select/logsql/query",
-        bounds(from, to) ++ [service: "recording", limit: @records, order: "desc"] ++ host(store)
+      logsql(store, from, to, [service: "recording"] ++ host(store),
+        limit: @records,
+        order: :desc
       )
 
     case asked do
@@ -613,12 +630,10 @@ defmodule TimelessBeamAcct.Watch.Planes do
     # busy node ends hundreds of processes a second, and the one that is
     # looked for is seldom among the last few.
     Enum.reduce_while(0..9, {:ok, []}, fn page, {:ok, found} ->
-      case get(
-             store,
-             :logs,
-             "/select/logsql/query",
-             bounds(until - span, until) ++
-               [limit: @records, offset: page * @records, order: "desc"] ++ host(store)
+      case logsql(store, until - span, until, host(store),
+             limit: @records,
+             offset: page * @records,
+             order: :desc
            ) do
         {:ok, body} ->
           rows = lines(body)
@@ -651,24 +666,49 @@ defmodule TimelessBeamAcct.Watch.Planes do
     end)
   end
 
-  @impl true
-  def jobs(%__MODULE__{} = store, %{until: until, span: span, limit: limit}, width, wanted) do
-    since = trunc((until - span) * 1_000_000_000)
-    before = trunc(until * 1_000_000_000)
+  # How much further back a job is looked for when its trace is not
+  # found yet.
+  @not_found_yet 60
 
-    # The latest to start are the ones wanted. The last few hundred spans
-    # are read, the traces among them that have more than one are jobs,
-    # and the spans of those are read in full.
+  @impl true
+  def jobs(%__MODULE__{traces: nil}, _reach, _width, _wanted),
+    do: {:error, "Where the traces plane is was not said: --traces-url."}
+
+  def jobs(%__MODULE__{} = store, %{until: until, span: span, limit: limit}, width, wanted) do
+    case jobs_until(store, until, span, limit, width, wanted) do
+      # A plane may make a trace findable some time after it was written:
+      # VictoriaTraces, half a minute. What was not found yet is looked for
+      # a minute further back, once.
+      {:ok, jobs, missing} when missing > 0 and length(jobs) < limit ->
+        case jobs_until(store, until - @not_found_yet, span, limit, width, wanted) do
+          {:ok, earlier, _missing} when length(earlier) > length(jobs) -> {:ok, earlier}
+          _ -> {:ok, jobs}
+        end
+
+      {:ok, jobs, _missing} ->
+        {:ok, jobs}
+
+      {:error, why} ->
+        {:error, why}
+    end
+  end
+
+  defp jobs_until(store, until, span, limit, width, wanted) do
+    # The latest to start are the ones wanted. Every process that ended is
+    # a record with the trace it was of: the last few hundred are read, the
+    # traces among them that have more than one are jobs, and the spans of
+    # those are read in full, a trace at a time, as Jaeger asks for one.
     pages =
       0..5
       |> Task.async_stream(
         fn page ->
-          get(store, :traces, "/select/timeless/api/spans",
-            since: since,
-            until: before,
+          # Not filtered by kind: a plane may look through every record for
+          # a field, where one in time order is read as it lies, and nearly
+          # every record is of a process that ended.
+          logsql(store, until - span, until, host(store),
             limit: @spans,
             offset: page * @spans,
-            order: "desc"
+            order: :desc
           )
         end,
         max_concurrency: 3,
@@ -683,46 +723,47 @@ defmodule TimelessBeamAcct.Watch.Planes do
       nil ->
         seen =
           for {:ok, body} <- pages,
-              {:ok, %{"entries" => entries}} <- [JSON.decode(body)],
-              entry <- entries,
-              ours?(store, entry),
-              do: entry
+              row <- lines(body),
+              row["kind"] == "exit",
+              is_binary(row["trace_id"]) and row["trace_id"] != "",
+              ours?(store, row),
+              do: row
 
         traces =
           seen
           |> Enum.group_by(& &1["trace_id"])
           |> Enum.filter(&match?({_trace, [_, _ | _]}, &1))
-          |> Enum.map(fn {trace, spans} ->
-            {spans |> Enum.map(& &1["start_time"]) |> Enum.min(), trace}
+          |> Enum.map(fn {trace, rows} ->
+            {rows |> Enum.map(&(number(&1["started"]) || 0.0)) |> Enum.min(), trace}
           end)
           |> Enum.sort(:desc)
           |> Enum.take(min(limit, @jobs))
 
-        jobs =
+        found =
           traces
           |> Task.async_stream(
             fn {_start, trace} ->
-              get(store, :traces, "/select/timeless/api/traces/#{trace}", [])
+              get(store, :traces, "/select/jaeger/api/traces/#{trace}", [])
             end,
             max_concurrency: 4,
             timeout: store.timeout + 1000
           )
-          |> Enum.flat_map(fn
+          |> Enum.map(fn
             {:ok, {:ok, body}} ->
               case JSON.decode(body) do
-                {:ok, %{"spans" => [_ | _] = spans}} ->
-                  [spans |> Enum.flat_map(&span_of/1) |> Store.job(width)]
+                {:ok, %{"data" => [%{"spans" => [_ | _]} = trace | _]}} ->
+                  trace |> jaeger_spans() |> Store.job(width)
 
                 _ ->
-                  []
+                  nil
               end
 
             _ ->
-              []
+              nil
           end)
-          |> Enum.filter(wanted)
 
-        {:ok, jobs}
+        jobs = found |> Enum.reject(&is_nil/1) |> Enum.filter(wanted)
+        {:ok, jobs, Enum.count(found, &is_nil/1)}
     end
   end
 
@@ -735,19 +776,48 @@ defmodule TimelessBeamAcct.Watch.Planes do
     end
   end
 
-  defp span_of(%{"trace_id" => trace, "span_id" => id, "start_time" => start} = span) do
+  # What Jaeger says of a span that is not an attribute of the process.
+  @span_tags ~w(span.kind otel.status_code otel.status_description otel.scope.name otel.scope.version error)
+
+  # The spans of a trace as Jaeger says them: a parent is what it is a
+  # CHILD_OF, times are in microseconds, and the service is its process's.
+  # A plane may say every tag as a string, and how a span ended only by
+  # `error`: numbers and booleans are read back from what they were
+  # written as.
+  @doc false
+  @spec jaeger_spans(map()) :: [Span.t()]
+  def jaeger_spans(%{"spans" => spans} = trace) do
+    processes = trace["processes"] || %{}
+    Enum.flat_map(spans, &span_of(&1, processes))
+  end
+
+  defp span_of(%{"traceID" => trace, "spanID" => id, "startTime" => start} = span, processes)
+       when is_number(start) do
     with {:ok, trace} <- Base.decode16(trace, case: :mixed),
          {:ok, id} <- Base.decode16(id, case: :mixed) do
+      tags = Map.new(span["tags"] || [], fn tag -> {tag["key"], tag_value(tag["value"])} end)
+
       parent =
-        case span["parent_span_id"] do
-          text when is_binary(text) and text != "" ->
-            case Base.decode16(text, case: :mixed) do
+        Enum.find_value(span["references"] || [], fn
+          %{"refType" => "CHILD_OF", "spanID" => parent} ->
+            case Base.decode16(parent, case: :mixed) do
               {:ok, parent} -> parent
               :error -> nil
             end
 
           _ ->
             nil
+        end)
+
+      process = processes[span["processID"]] || %{}
+
+      ok =
+        case {tags["otel.status_code"], tags["error"]} do
+          {"OK", _} -> true
+          {"ERROR", _} -> false
+          {_, true} -> false
+          {_, false} -> true
+          _ -> nil
         end
 
       [
@@ -755,18 +825,13 @@ defmodule TimelessBeamAcct.Watch.Planes do
           trace_id: trace,
           span_id: id,
           parent_span_id: parent,
-          name: span["name"] || "",
-          service: get_in(span, ["resource", "service.name"]) || "",
-          ok:
-            case span["status"] do
-              "ok" -> true
-              "error" -> false
-              _ -> nil
-            end,
-          ending: span["status_message"] || "",
-          start_ns: start,
-          duration_ns: span["duration_ns"] || 0,
-          attributes: span["attributes"] || %{}
+          name: span["operationName"] || "",
+          service: process["serviceName"] || "",
+          ok: ok,
+          ending: tags["otel.status_description"] || "",
+          start_ns: trunc(start * 1000),
+          duration_ns: trunc((span["duration"] || 0) * 1000),
+          attributes: Map.drop(tags, @span_tags)
         }
       ]
     else
@@ -774,7 +839,25 @@ defmodule TimelessBeamAcct.Watch.Planes do
     end
   end
 
-  defp span_of(_span), do: []
+  defp span_of(_span, _processes), do: []
+
+  defp tag_value("true"), do: true
+  defp tag_value("false"), do: false
+
+  defp tag_value(text) when is_binary(text) do
+    case Integer.parse(text) do
+      {integer, ""} ->
+        integer
+
+      _ ->
+        case Float.parse(text) do
+          {float, ""} -> float
+          _ -> text
+        end
+    end
+  end
+
+  defp tag_value(value), do: value
 
   # Whether a record, or a span, is of the node that is looked at.
   defp ours?(%__MODULE__{node: nil}, _row), do: true
@@ -788,14 +871,46 @@ defmodule TimelessBeamAcct.Watch.Planes do
   end
 
   defp records(store, params, from, to) do
-    case get(store, :logs, "/select/logsql/query", bounds(from, to) ++ params ++ host(store)) do
+    {fields, options} = Keyword.split(params, [:level, :service, :kind])
+
+    options =
+      Enum.map(options, fn
+        {:order, order} -> {:order, String.to_existing_atom(order)}
+        other -> other
+      end)
+
+    case logsql(store, from, to, fields ++ host(store), options) do
       {:ok, body} -> lines(body)
       {:error, _} -> []
     end
   end
 
-  defp bounds(from, to),
-    do: [start: trunc(Float.floor(from / 1)), end: trunc(Float.ceil(to / 1))]
+  ## LogsQL
+
+  # Records between two times, whose fields are exactly those given, as
+  # LogsQL: the time and the fields as filters, then the order, how many
+  # to pass over, and how many to give. Asked by POST, which every plane
+  # that speaks LogsQL takes, with the time in the query.
+  defp logsql(store, from, to, fields, options) do
+    time =
+      "_time:[#{iso(Float.floor(from / 1))}, #{iso(Float.ceil(to / 1))}]"
+
+    filters = for {field, value} <- fields, do: ~s[#{field}:="#{escape(to_string(value))}"]
+
+    pipes =
+      case options[:order] do
+        :desc -> ["sort by (_time desc)"]
+        :asc -> ["sort by (_time)"]
+        nil -> []
+      end ++
+        if(options[:offset] && options[:offset] > 0, do: ["offset #{options[:offset]}"], else: []) ++
+        if(options[:limit], do: ["limit #{options[:limit]}"], else: [])
+
+    query = Enum.join([time | filters], " ") <> Enum.map_join(pipes, &(" | " <> &1))
+    post(store, :logs, "/select/logsql/query", query: query)
+  end
+
+  defp iso(seconds), do: seconds |> trunc() |> DateTime.from_unix!() |> DateTime.to_iso8601()
 
   # The labels that say whose series are wanted.
   defp who(%__MODULE__{node: node, host: host}),
@@ -807,7 +922,28 @@ defmodule TimelessBeamAcct.Watch.Planes do
   defp lines(body) do
     for line <- String.split(body, "\n", trim: true),
         {:ok, %{} = row} <- [JSON.decode(line)],
-        do: row
+        do: numbers(row)
+  end
+
+  # The fields of a record that are numbers, as numbers. A plane may give
+  # every field back as text, as VictoriaLogs does; what is an id, or a
+  # name, is left as it is, though it be all digits.
+  @numbers ~w(elapsed_seconds seen_seconds reductions peak_memory_bytes started stop_at
+              stop_after max_recording value)
+
+  defp numbers(row) do
+    Enum.reduce(@numbers, row, fn field, row ->
+      case row do
+        %{^field => text} when is_binary(text) ->
+          case number(text) do
+            nil -> row
+            value -> %{row | field => value}
+          end
+
+        _ ->
+          row
+      end
+    end)
   end
 
   defp moment(text) when is_binary(text) do
@@ -829,6 +965,73 @@ defmodule TimelessBeamAcct.Watch.Planes do
   end
 
   defp number(_value), do: nil
+
+  ## PromQL
+
+  # A series selector: the metric, the node's labels, and any more.
+  defp selector(store, metric, labels \\ []) do
+    matchers =
+      for {key, value} <- labels ++ who(store),
+          do: ~s[#{key}="#{escape(to_string(value))}"]
+
+    metric <> "{" <> Enum.join(matchers, ",") <> "}"
+  end
+
+  # The raw samples of a selector in the `seconds` up to `at`, with their
+  # own times: a range selector, asked at a moment.
+  defp samples_until(store, selector, at, seconds) do
+    store
+    |> get(:metrics, "/api/v1/query",
+      query: "#{selector}[#{max(trunc(seconds), 1)}s]",
+      time: trunc(Float.ceil(at / 1))
+    )
+    |> series_of()
+  end
+
+  # A plane may put the times it evaluates at on multiples of the step,
+  # and stop at the last of them before `end`: one step more is asked for,
+  # so that the last part is evaluated wherever the multiples fall, and
+  # what is past it is left out.
+  defp promql_range(store, query, from, to, step) do
+    to = Float.ceil(to / 1)
+
+    store
+    |> get(:metrics, "/api/v1/query_range",
+      query: query,
+      start: trunc(Float.floor(from / 1)),
+      end: trunc(to + step),
+      step: trunc(step)
+    )
+    |> series_of()
+    |> Enum.map(fn series ->
+      %{series | values: Enum.filter(series.values, fn {at, _} -> at - step < to end)}
+    end)
+  end
+
+  # The series of an answer, a matrix or a vector, as their labels and
+  # `{seconds, value}` in time order. Nothing, if it was not an answer.
+  defp series_of({:ok, body}) do
+    case JSON.decode(body) do
+      {:ok, %{"status" => "success", "data" => %{"result" => result}}} when is_list(result) ->
+        for %{"metric" => labels} = series <- result do
+          points = series["values"] || List.wrap(series["value"])
+
+          values =
+            for [at, value] <- points,
+                is_number(at),
+                value = number(value),
+                is_number(value),
+                do: {at / 1, value}
+
+          %{labels: labels, values: values}
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  defp series_of({:error, _}), do: []
 
   ## Asking
 
@@ -865,6 +1068,39 @@ defmodule TimelessBeamAcct.Watch.Planes do
 
       {:error, reason} ->
         {:error, "#{base}: #{Http.format_error(reason)}"}
+    end
+  end
+
+  defp post(%__MODULE__{} = store, plane, path, form, again \\ true) do
+    case Map.fetch!(store, plane) do
+      nil ->
+        {:error, "Where the #{plane} plane is was not said: --#{plane}-url."}
+
+      base ->
+        headers =
+          [{"content-type", "application/x-www-form-urlencoded"}] ++
+            case store.tokens[plane] do
+              token when is_binary(token) and token != "" ->
+                [{"authorization", "Bearer " <> token}]
+
+              _ ->
+                []
+            end
+
+        case Http.post(base <> path, URI.encode_query(form), headers, store.timeout, keep: @keep) do
+          {:ok, status, body} when status in 200..299 ->
+            {:ok, body}
+
+          {:ok, status, _body} when again and status in [503, 429] ->
+            Process.sleep(@again_ms)
+            post(store, plane, path, form, false)
+
+          {:ok, status, body} ->
+            {:error, "#{base} answered #{status}: #{said(body)}"}
+
+          {:error, reason} ->
+            {:error, "#{base}: #{Http.format_error(reason)}"}
+        end
     end
   end
 

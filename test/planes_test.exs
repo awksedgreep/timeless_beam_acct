@@ -29,6 +29,10 @@ defmodule TimelessBeamAcct.PlanesTest do
   @moduletag :planes
   @moduletag timeout: 60_000
 
+  # Asked once, as the tests are compiled: of planes that are not
+  # Timeless's, what they store is read by the watch's tests instead.
+  @not_timeless RealPlanes.not_timeless()
+
   @node "planes@test"
   @metric "beam_planes_test_value"
   # How long a plane is given to show what it answered for.
@@ -289,6 +293,7 @@ defmodule TimelessBeamAcct.PlanesTest do
 
   ## Samples
 
+  @tag skip: @not_timeless
   test "every sample is stored under its labels, with its value, at the time of its tick",
        context do
     sent =
@@ -314,6 +319,7 @@ defmodule TimelessBeamAcct.PlanesTest do
     assert length(stored) == map_size(sent)
   end
 
+  @tag skip: @not_timeless
   test "a query finds a sample for thirty seconds after it was taken, and not after", context do
     selector = ~s(#{@metric}{host="#{context.host}",case="bytes"})
     stored_samples(context)
@@ -330,6 +336,7 @@ defmodule TimelessBeamAcct.PlanesTest do
              promql(context, "/api/v1/query", query: escaped, time: context.ts)
   end
 
+  @tag skip: @not_timeless
   test "a query over a range has the sample from its second on", context do
     stored_samples(context)
 
@@ -346,6 +353,7 @@ defmodule TimelessBeamAcct.PlanesTest do
 
   ## Records
 
+  @tag skip: @not_timeless
   test "every record is stored at its microsecond, at its level, with its fields as they were",
        context do
     stored = stored_records(context)
@@ -366,6 +374,7 @@ defmodule TimelessBeamAcct.PlanesTest do
     end
   end
 
+  @tag skip: @not_timeless
   test "records are found by their service, their status, and their path", context do
     stored_records(context)
 
@@ -385,6 +394,7 @@ defmodule TimelessBeamAcct.PlanesTest do
 
   ## Spans
 
+  @tag skip: @not_timeless
   test "a trace is stored as the tree it was, each span as it began and ended", context do
     [root | tasks] = context.tick.spans
     stored = Map.new(stored_spans(context), &{&1["span_id"], &1})
@@ -417,6 +427,7 @@ defmodule TimelessBeamAcct.PlanesTest do
     end
   end
 
+  @tag skip: @not_timeless
   test "the application is a service, and the group an operation of it", context do
     stored_spans(context)
 
@@ -436,6 +447,7 @@ defmodule TimelessBeamAcct.PlanesTest do
 
   ## The planes
 
+  @tag skip: @not_timeless
   test "each plane says it is the plane it was taken for", context do
     for {plane, _url, result} <- Sink.check(context.sink) do
       assert {:ok, said} = result

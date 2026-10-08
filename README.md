@@ -502,6 +502,42 @@ read and what a key does are `watch`'s own, so
 the two do not come to differ. The link has the recording in it, and
 can be sent to someone.
 
+### To VictoriaMetrics, VictoriaLogs, and VictoriaTraces
+
+The `:http` sink writes as they are written to, and what reads it back
+(the page in LiveDashboard, `watch`, and `recordings`) asks as they are
+asked: PromQL, LogsQL, and Jaeger's API for a trace. So the three of
+VictoriaMetrics' stack serve as the planes do, given where they are:
+
+```elixir
+{TimelessBeamAcct,
+ sink: :http,
+ metrics_url: "http://victoria-metrics:8428",
+ logs_url: "http://victoria-logs:9428",
+ traces_url: "http://victoria-traces:10428",
+ stop_after: "1h"}
+```
+
+and the same URLs to the page, as `config :timeless_beam_acct, :dashboard`,
+or to `watch` and `recordings` as `--metrics-url` and the rest. It was
+run so against VictoriaMetrics 1.153, VictoriaLogs 1.53, and
+VictoriaTraces 0.12, and what a recording wrote was read back, every view
+of it, the same as from Timeless's planes. Three things differ:
+
+- **A job of the last half minute is not there yet.** VictoriaTraces
+  makes a trace findable some thirty seconds after it was written
+  (`-insert.indexFlushInterval`), and a job's processes are read by its
+  trace. Watched as it happens, the jobs are of a minute before; gone back
+  to, they are all there.
+- **The Storage card is not shown.** It is of what Timeless's planes say
+  they hold, and how small; Victoria's do not say it so.
+- **`check` says `answering: OK`**, which is what Victoria's `/health`
+  says, and not which plane it is.
+
+It is the same over Timeless's planes: what is asked is asked in the
+languages both answer, and was measured to cost Timeless's planes what
+the questions of their own had, or less.
+
 ### To the canvas
 
 The canvas reads from the Timeless planes. Point the collector at them:
@@ -1268,7 +1304,7 @@ that was read: `:observer`, `:recon`, or the application's own count.
   record, and is on a canvas and in `exits(kind: "long_gc")`, and has no
   view.
 - **The page, beside the stores in the node.** The page in LiveDashboard
-  reads and records to the Timeless planes. An application with
+  reads and records to the planes, Timeless's or Victoria's. An application with
   timeless_phoenix's stores in the node and no planes has the page in its
   menu, and nothing for it to list or record to.
 - **Removing a recording.** It waits on the planes being able to remove
@@ -1329,6 +1365,17 @@ TIMELESS_TEST_METRICS_URL=http://127.0.0.1:28428 \
 TIMELESS_TEST_LOGS_URL=http://127.0.0.1:29428 \
 TIMELESS_TEST_TRACES_URL=http://127.0.0.1:30428 \
   mix test --only planes
+```
+
+Against VictoriaMetrics, VictoriaLogs, and VictoriaTraces started the
+same way, on the same ports, the same command reads what was written as
+`watch` and the page read it (`test/watch/real_planes_test.exs`), and
+says why it leaves out the tests that read by Timeless's own routes:
+
+```sh
+victoria-metrics-prod -httpListenAddr=127.0.0.1:28428 -storageDataPath=/tmp/vm &
+victoria-logs-prod    -httpListenAddr=127.0.0.1:29428 -storageDataPath=/tmp/vl &
+victoria-traces-prod  -httpListenAddr=127.0.0.1:30428 -storageDataPath=/tmp/vt &
 ```
 
 It must be told where all three are, and refuses ports 8428, 9428, and

@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **VictoriaMetrics, VictoriaLogs, and VictoriaTraces serve as the
+  planes.** The `:http` sink always wrote as they are written to; what
+  reads it back, the page in LiveDashboard, `watch`, and `recordings`,
+  now asks as they are asked: PromQL for samples, LogsQL by POST for
+  records, and Jaeger's API for a trace, which Timeless's planes answer
+  as well. Read back from both, every view the same. A job of the last
+  half minute is not there on VictoriaTraces, which makes a trace
+  findable some thirty seconds after it is written, and the Storage card
+  is of Timeless's planes only.
+- Over Timeless's planes the questions were measured against those they
+  replace, and cost the same; the jobs cost less, 31 ms for what was
+  266, since the processes of a trace are found among the records.
+- A record's numbers are read as numbers where a plane gives them back
+  as text.
+- The page says "the planes", and not "the Timeless planes", of planes
+  that are not configured or do not answer.
+
 ## 0.3.2
 
 - The screenshots in the README show on hex.pm. hex.pm shows a README's

@@ -53,7 +53,15 @@ TIMELESS_TEST_TRACES_URL=http://127.0.0.1:30428 \
 ```
 
 Against planes started for it, with databases that are thrown away, and
-stopped afterwards by the pids they were started with. The test refuses
+stopped afterwards by the pids they were started with.
+
+And again against VictoriaMetrics, VictoriaLogs, and VictoriaTraces,
+the single binaries of their releases, started on the same ports with
+data directories that are thrown away: what the page and `watch` read is
+asked as both answer, and is to be read back from both. Of Victoria's,
+the tests that read by Timeless's own routes are skipped, and say so;
+the rest pass, the job among them in half a minute, when VictoriaTraces
+makes its trace findable. The test refuses
 ports 8428, 9428, and 10428 of the machine it runs on, which are where
 the planes of whoever works on that machine are.
 

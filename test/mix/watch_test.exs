@@ -30,35 +30,45 @@ defmodule Mix.Tasks.TimelessBeamAcct.WatchTest do
     end
 
     plane =
-      start_supervised!(
-        {TestPlane,
-         answer: fn request ->
-           case URI.parse(request.path).path do
-             "/api/v1/label/node/values" ->
-               {200, ~s({"status":"success","data":["app@ohm","other@ohm"]})}
+      start_supervised!({TestPlane,
+       answer: fn request ->
+         case URI.parse(request.path).path do
+           "/api/v1/label/node/values" ->
+             {200, ~s({"status":"success","data":["app@ohm","other@ohm"]})}
 
-             "/api/v1/query" ->
-               if request.path =~ "metric=" do
-                 {200, ~s({"timestamp":#{System.os_time(:second) - 5},"value":1.0})}
-               else
-                 {200,
-                  JSON.encode!(%{
-                    "status" => "success",
-                    "data" => %{
-                      "result" => [
-                        sample.("beam_vm_run_queue", %{}, "3"),
-                        sample.("beam_group_processes", %{"group" => "MyApp.Repo"}, "1"),
-                        sample.("beam_group_work_pct", %{"group" => "MyApp.Repo"}, "41.5")
-                      ]
-                    }
-                  })}
-               end
+           "/api/v1/query" ->
+             query = URI.decode_query(URI.parse(request.path).query)["query"]
 
-             _ ->
-               {200, ""}
-           end
-         end}
-      )
+             # A range selector: the samples since, for the last of them.
+             if query =~ ~r/\[\d+s\]$/ do
+               at = System.os_time(:second) - 5
+
+               {200,
+                JSON.encode!(%{
+                  "status" => "success",
+                  "data" => %{
+                    "resultType" => "matrix",
+                    "result" => [%{"metric" => %{"node" => "app@ohm"}, "values" => [[at, "1"]]}]
+                  }
+                })}
+             else
+               {200,
+                JSON.encode!(%{
+                  "status" => "success",
+                  "data" => %{
+                    "result" => [
+                      sample.("beam_vm_run_queue", %{}, "3"),
+                      sample.("beam_group_processes", %{"group" => "MyApp.Repo"}, "1"),
+                      sample.("beam_group_work_pct", %{"group" => "MyApp.Repo"}, "41.5")
+                    ]
+                  }
+                })}
+             end
+
+           _ ->
+             {200, ""}
+         end
+       end})
 
     url = TestPlane.url(plane)
 

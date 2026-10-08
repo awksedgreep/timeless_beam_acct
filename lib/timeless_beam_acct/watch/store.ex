@@ -6,7 +6,7 @@ defmodule TimelessBeamAcct.Watch.Store do
   filling it, and what it has written since the last look is there at the
   next one.
 
-  Two things are a store: the Timeless planes, asked over HTTP
+  Two things are a store: the planes, Timeless's or Victoria's, asked over HTTP
   (`TimelessBeamAcct.Watch.Planes`), which hold what a collector has
   written for as long as they were told to keep it; and what the collector
   keeps in memory (`TimelessBeamAcct.Watch.Memory`), which is the last

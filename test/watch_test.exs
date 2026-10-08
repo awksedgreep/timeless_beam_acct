@@ -425,43 +425,45 @@ defmodule TimelessBeamAcct.WatchTest do
         })
 
       # Readings every ten seconds until it died; five-minute parts of them
-      # over its stretch, stamped at the beginning of each part.
+      # over its stretch, stamped as PromQL stamps them, at each one's end.
       readings = Enum.to_list(trunc(started)..died//10)
-      parts = for at <- trunc(started)..died//300, do: [at, 500]
+      parts = for at <- trunc(started)..died//300, do: [at + 300, "500"]
+
+      matrix = fn values ->
+        %{
+          "status" => "success",
+          "data" => %{"result" => [%{"metric" => %{}, "values" => values}]}
+        }
+      end
 
       plane =
-        start_supervised!(
-          {TimelessBeamAcct.TestPlane,
-           answer: fn %{path: path} ->
-             query =
-               path |> URI.parse() |> Map.get(:query, "") |> to_string() |> URI.decode_query()
+        start_supervised!({TimelessBeamAcct.TestPlane,
+         answer: fn %{path: path} ->
+           query =
+             path |> URI.parse() |> Map.get(:query, "") |> to_string() |> URI.decode_query()
 
-             cond do
-               path =~ "/select/logsql" ->
-                 {200, started_only}
+           cond do
+             path =~ "/select/logsql" ->
+               {200, started_only}
 
-               path =~ "/api/v1/query_range" ->
-                 {200, JSON.encode!(%{"series" => [%{"data" => parts}]})}
+             path =~ "/api/v1/query_range" ->
+               {200, JSON.encode!(matrix.(parts))}
 
-               path =~ "/api/v1/export" ->
-                 {from, to} = {String.to_integer(query["start"]), String.to_integer(query["end"])}
-                 stamps = for at <- readings, at >= from, at <= to, do: at * 1000
+             # A range selector: the readings in the seconds up to then.
+             path =~ "/api/v1/query" ->
+               [_, seconds] = Regex.run(~r/\[(\d+)s\]$/, query["query"])
+               to = String.to_integer(query["time"])
+               from = to - String.to_integer(seconds)
+               values = for at <- readings, at > from, at <= to, do: [at, "500"]
+               {200, JSON.encode!(matrix.(values))}
 
-                 {200,
-                  JSON.encode!(%{
-                    "metric" => %{"__name__" => "beam_vm_processes"},
-                    "timestamps" => stamps,
-                    "values" => Enum.map(stamps, fn _ -> 500 end)
-                  })}
+             path =~ "/label/node/values" ->
+               {200, JSON.encode!(%{"data" => ["app@ohm"]})}
 
-               path =~ "/label/node/values" ->
-                 {200, JSON.encode!(%{"data" => ["app@ohm"]})}
-
-               true ->
-                 {200, JSON.encode!(%{"data" => []})}
-             end
-           end}
-        )
+             true ->
+               {200, JSON.encode!(%{"data" => []})}
+           end
+         end})
 
       url = TimelessBeamAcct.TestPlane.url(plane)
 
