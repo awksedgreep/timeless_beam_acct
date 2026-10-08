@@ -326,7 +326,7 @@ defmodule TimelessBeamAcct.Sink.Http do
 
   A plane answers with some sixty figures about itself, and among them
   what it is. What it is is what is said: `answering:
-  timeless-metrics-api 0.8.5`. The three planes answer for `/health`
+  timeless-metrics-api 0.8.11`. The three planes answer for `/health`
   alike, so one that is reached at the URL of another would be said to be
   answering, and would then refuse everything it was sent as something it
   has no route for. A plane that says it is another of the three is

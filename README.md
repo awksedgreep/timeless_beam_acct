@@ -181,9 +181,9 @@ collector                 running: a sweep of 75 processes took 2ms, every 10.0s
 
 sink                      http: http://127.0.0.1:8428/api/v1/import/prometheus, ...
 written                   6 ticks, 0 failed
-metrics plane             http://127.0.0.1:8428  answering: timeless-metrics-api 0.8.5
-logs plane                http://127.0.0.1:9428  answering: timeless-logs-api 0.8.5
-traces plane              http://127.0.0.1:10428  answering: timeless-traces-api 0.8.5
+metrics plane             http://127.0.0.1:8428  answering: timeless-metrics-api 0.8.11
+logs plane                http://127.0.0.1:9428  answering: timeless-logs-api 0.8.11
+traces plane              http://127.0.0.1:10428  answering: timeless-traces-api 0.8.11
 ```
 
 ### Turning it off
